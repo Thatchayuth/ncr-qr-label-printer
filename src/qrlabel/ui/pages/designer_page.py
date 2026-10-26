@@ -5,8 +5,9 @@ import copy
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -16,6 +17,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -69,6 +72,7 @@ class DesignerPage(QWidget):
         self.ecc = "M"
         self.snap_step = 0.5
         self._loading = False
+        self._syncing = False  # True while canvas and layer list selection are being matched
         self._clipboard: list[LabelElement] = []
         self._saved_snapshot: LabelTemplate | None = None
         self.undo_stack: list[LabelTemplate] = []
@@ -98,6 +102,7 @@ class DesignerPage(QWidget):
         sl = QVBoxLayout(side)
         sl.setContentsMargins(0, 0, 0, 0)
         sl.setSpacing(18)
+        sl.addWidget(self._build_layers_card())
         sl.addWidget(self._build_element_card())
         sl.addWidget(self._build_label_card())
         sl.addStretch(1)
@@ -230,6 +235,57 @@ class DesignerPage(QWidget):
         self.sample_edit.editingFinished.connect(self._refresh_sample)
         return card
 
+    def _build_layers_card(self) -> Card:
+        card = Card("Layers")
+        self.layer_count = chip("", gray=True)
+        card.header.addWidget(self.layer_count)
+        self.layers = QListWidget()
+        self.layers.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.layers.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.layers.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.layers.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed
+        )
+        self.layers.setIconSize(QSize(16, 16))
+        self.layers.setMinimumHeight(130)
+        self.layers.setMaximumHeight(210)
+        self.layers.setStyleSheet(
+            "QListWidget { border: 1px solid #E2E8F0; border-radius: 8px; padding: 4px; background: #FFFFFF; outline: 0; }"
+            "QListWidget::item { padding: 5px 6px; border-radius: 6px; }"
+            "QListWidget::item:selected { background: #DBEAFE; color: #0F172A; }"
+            "QListWidget::item:hover:!selected { background: #F1F5F9; }"
+        )
+        card.body.addWidget(self.layers)
+
+        row = QHBoxLayout()
+        row.setSpacing(2)
+        self.layer_btns = {}
+        for key, text, tip in [
+            ("front", "Front", "Bring to front (Ctrl+Shift+])"),
+            ("up", "Up", "Bring forward one layer (Ctrl+])"),
+            ("down", "Down", "Send backward one layer (Ctrl+[)"),
+            ("back", "Back", "Send to back (Ctrl+Shift+[)"),
+            ("lock", "Lock", "Lock / unlock: locked layers cannot be moved or resized (Ctrl+L)"),
+        ]:
+            b = QPushButton(text)
+            b.setObjectName("Ghost")
+            b.setToolTip(tip)
+            row.addWidget(b)
+            self.layer_btns[key] = b
+        card.body.addLayout(row)
+        hint = QLabel("Top of the list is in front. Drag to reorder, double-click to rename.")
+        hint.setObjectName("Muted")
+        hint.setWordWrap(True)
+        card.body.addWidget(hint)
+
+        for key in ("front", "up", "down", "back"):
+            self.layer_btns[key].clicked.connect(lambda _=False, k=key: self._move_layers(k))
+        self.layer_btns["lock"].clicked.connect(self._toggle_lock)
+        self.layers.itemSelectionChanged.connect(self._on_layer_selection)
+        self.layers.model().rowsMoved.connect(lambda *_: QTimer.singleShot(0, self._on_layers_dragged))
+        self.layers.itemChanged.connect(self._on_layer_renamed)
+        return card
+
     def _build_element_card(self) -> Card:
         card = Card("Selected element")
         self.el_kind_chip = chip("", gray=True)
@@ -281,6 +337,9 @@ class DesignerPage(QWidget):
         f.addRow("Align", self.e_align)
         f.addRow("Line thickness", self.e_thick)
         f.addRow("Name", self.e_name)
+        self.e_lock = QCheckBox("Locked (cannot be moved on the canvas)")
+        f.addRow("", self.e_lock)
+        self.e_lock.toggled.connect(self._on_element_edit)
         self.el_form = f
         card.body.addWidget(self.el_form_w)
         self.el_form_w.hide()
@@ -479,6 +538,7 @@ class DesignerPage(QWidget):
             t.elements.append(el)
             self._add_item(el).setSelected(True)
         self._clipboard = [copy.deepcopy(i.el) for i in self.items if i.isSelected()]  # next paste steps again
+        self._refresh_layers()
         self._changed()
 
     def _duplicate_element(self) -> None:
@@ -520,6 +580,13 @@ class DesignerPage(QWidget):
             ("Ctrl++", "Zoom in", lambda: self.view.set_zoom(self.view.zoom * 1.25)),
             ("Ctrl+-", "Zoom out", lambda: self.view.set_zoom(self.view.zoom / 1.25)),
             ("Ctrl+G", "Show / hide grid", self._toggle_grid),
+            ("Ctrl+]", "Bring layer forward", lambda: self._move_layers("up")),
+            ("Ctrl+[", "Send layer backward", lambda: self._move_layers("down")),
+            ("Ctrl+Shift+]", "Bring layer to front", lambda: self._move_layers("front")),
+            ("Ctrl+}", "Bring layer to front", lambda: self._move_layers("front")),
+            ("Ctrl+Shift+[", "Send layer to back", lambda: self._move_layers("back")),
+            ("Ctrl+{", "Send layer to back", lambda: self._move_layers("back")),
+            ("Ctrl+L", "Lock / unlock layer", self._toggle_lock),
             ("F1", "Show keyboard shortcuts", self._show_shortcuts),
         ]
         self._shortcuts = []
@@ -528,7 +595,8 @@ class DesignerPage(QWidget):
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             sc.activated.connect(fn)
             self._shortcuts.append(sc)
-        self.shortcut_help = [(k, d) for k, d, _ in page_keys if k not in ("Ctrl+Shift+Z", "Ctrl++")] + [
+        hidden = ("Ctrl+Shift+Z", "Ctrl++", "Ctrl+}", "Ctrl+{")
+        self.shortcut_help = [(k, d) for k, d, _ in page_keys if k not in hidden] + [
             ("Delete", "Delete selected element(s)"),
             ("Arrow keys", "Move 0.5 mm  (Shift = 0.1 mm, Ctrl = 1 mm)"),
             ("Ctrl + mouse wheel", "Zoom"),
@@ -580,15 +648,151 @@ class DesignerPage(QWidget):
         self.scene.set_template(self.template)
         for el in self.template.elements:
             self._add_item(el)
+        self._refresh_layers()
         self._on_selection()
         self._validate()
 
     def _add_item(self, el: LabelElement) -> ElementItem:
         item = ElementItem(el, self._render_ctx)
         item.changed.connect(self._on_item_changed)
+        item.setZValue(len(self.items))
         self.scene.addItem(item)
         self.items.append(item)
         return item
+
+    # ================================================================ layers
+
+    @staticmethod
+    def _layer_label(el: LabelElement, profile: DataProfile | None) -> str:
+        if el.name:
+            return el.name
+        if el.kind == "text" and el.field:
+            fd = profile.get_field(el.field) if profile else None
+            return f"Field · {fd.label if fd else el.field}"
+        if el.kind == "text":
+            text = " ".join(el.text.split())
+            return f"Text · {text[:24]}" if text else "Text"
+        return {"qr": "QR code", "rect": "Box", "line": "Line"}.get(el.kind, el.kind)
+
+    def _refresh_layers(self) -> None:
+        if not self.template:
+            return
+        self._syncing = True
+        icons = {"qr": "qr", "rect": "layout", "line": "minus"}
+        self.layers.clear()
+        selected = {id(i.el) for i in self.items if i.isSelected()}
+        for el in reversed(self.template.elements):  # top of the list = in front
+            text = self._layer_label(el, self.profile) + ("   🔒" if el.locked else "")
+            ic = icons.get(el.kind, "table" if el.field else "layout")
+            it = QListWidgetItem(icon(ic, "#94A3B8" if el.locked else "#334155", size=16), text)
+            it.setData(Qt.ItemDataRole.UserRole, id(el))
+            it.setFlags(
+                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsDragEnabled
+            )
+            if el.locked:
+                it.setForeground(QColor("#64748B"))
+            self.layers.addItem(it)
+            it.setSelected(id(el) in selected)
+        self.layer_count.setText(str(len(self.template.elements)))
+        self._syncing = False
+        self._update_layer_buttons()
+
+    def _update_layer_buttons(self) -> None:
+        sel = [i for i in self.items if i.isSelected()]
+        for key in ("front", "up", "down", "back", "lock"):
+            self.layer_btns[key].setEnabled(bool(sel))
+        self.layer_btns["lock"].setText("Unlock" if sel and all(i.el.locked for i in sel) else "Lock")
+
+    def _sync_layers_from_canvas(self) -> None:
+        self._syncing = True
+        selected = {id(i.el) for i in self.items if i.isSelected()}
+        for row in range(self.layers.count()):
+            it = self.layers.item(row)
+            it.setSelected(it.data(Qt.ItemDataRole.UserRole) in selected)
+        self._syncing = False
+        self._update_layer_buttons()
+
+    def _on_layer_selection(self) -> None:
+        if self._syncing:
+            return
+        ids = {it.data(Qt.ItemDataRole.UserRole) for it in self.layers.selectedItems()}
+        self._syncing = True
+        for item in self.items:
+            item.setSelected(id(item.el) in ids)
+        self._syncing = False
+        self._on_selection()
+
+    def _apply_z(self) -> None:
+        order = {id(e): i for i, e in enumerate(self.template.elements)}
+        self.items.sort(key=lambda it: order[id(it.el)])
+        for item in self.items:
+            item.setZValue(order[id(item.el)])
+
+    def _on_layers_dragged(self) -> None:
+        """The list was reordered by drag and drop: apply the new order to the template."""
+        if self._syncing or not self.template:
+            return
+        by_id = {id(e): e for e in self.template.elements}
+        top_to_bottom = [by_id[self.layers.item(r).data(Qt.ItemDataRole.UserRole)] for r in range(self.layers.count())]
+        new = list(reversed(top_to_bottom))
+        if [id(e) for e in new] == [id(e) for e in self.template.elements]:
+            return
+        self.template.elements[:] = new
+        self._apply_z()
+        self._changed()
+
+    def _move_layers(self, mode: str) -> None:
+        els = self.template.elements if self.template else []
+        sel = {id(i.el) for i in self.items if i.isSelected()}
+        if not sel:
+            return
+        new = list(els)
+        if mode == "front":
+            new = [e for e in els if id(e) not in sel] + [e for e in els if id(e) in sel]
+        elif mode == "back":
+            new = [e for e in els if id(e) in sel] + [e for e in els if id(e) not in sel]
+        elif mode == "up":
+            for i in range(len(new) - 2, -1, -1):
+                if id(new[i]) in sel and id(new[i + 1]) not in sel:
+                    new[i], new[i + 1] = new[i + 1], new[i]
+        elif mode == "down":
+            for i in range(1, len(new)):
+                if id(new[i]) in sel and id(new[i - 1]) not in sel:
+                    new[i], new[i - 1] = new[i - 1], new[i]
+        if [id(e) for e in new] == [id(e) for e in els]:
+            return
+        els[:] = new
+        self._apply_z()
+        self._refresh_layers()
+        self._changed()
+
+    def _toggle_lock(self) -> None:
+        sel = [i for i in self.items if i.isSelected()]
+        if not sel:
+            return
+        lock = not all(i.el.locked for i in sel)
+        for i in sel:
+            i.el.locked = lock
+            i.apply_lock()
+        self._refresh_layers()
+        if self.selected_item():
+            self._fill_element_form(self.selected_item().el)
+        self._changed()
+
+    def _on_layer_renamed(self, it: QListWidgetItem) -> None:
+        if self._syncing:
+            return
+        el = next((e for e in self.template.elements if id(e) == it.data(Qt.ItemDataRole.UserRole)), None)
+        if el is None:
+            return
+        new = it.text().replace("🔒", "").strip()
+        auto = self._layer_label(LabelElement(**{**el.__dict__, "name": ""}), self.profile)
+        el.name = "" if new in ("", auto) else new[:60]
+        QTimer.singleShot(0, self._refresh_layers)
+        if self.selected_item() and self.selected_item().el is el:
+            self._fill_element_form(el)
+        self._changed()
 
     def _set_dirty(self, dirty: bool) -> None:
         self.dirty = dirty
@@ -711,18 +915,24 @@ class DesignerPage(QWidget):
         item = self._add_item(el)
         self.scene.clearSelection()
         item.setSelected(True)
+        self._refresh_layers()
         self._changed()
 
     def _delete_selected(self) -> None:
-        for item in [i for i in self.items if i.isSelected()]:
-            self.template.elements.remove(item.el)
+        doomed = [i for i in self.items if i.isSelected()]
+        if not doomed:
+            return
+        ids = {id(i.el) for i in doomed}
+        self.template.elements[:] = [e for e in self.template.elements if id(e) not in ids]  # by identity
+        for item in doomed:
             self.items.remove(item)
             self.scene.removeItem(item)
+        self._refresh_layers()
         self._on_selection()
         self._changed()
 
     def _nudge(self, dx: float, dy: float) -> None:
-        for item in [i for i in self.items if i.isSelected()]:
+        for item in [i for i in self.items if i.isSelected() and not i.el.locked]:
             item.move_exact(item.pos().x() + dx, item.pos().y() + dy)
 
     def _align(self, *_) -> None:
@@ -734,6 +944,9 @@ class DesignerPage(QWidget):
         t = self.template
         if not item or not t:
             self.banner.show_message("Select one element to align.", "info")
+            return
+        if item.el.locked:
+            self.banner.show_message("This layer is locked. Unlock it first (Ctrl+L).", "info")
             return
         fw, fh = footprint(item.el)
         x, y = item.pos().x(), item.pos().y()
@@ -757,6 +970,8 @@ class DesignerPage(QWidget):
         self._changed()
 
     def _on_selection(self) -> None:
+        if not self._syncing:
+            self._sync_layers_from_canvas()
         item = self.selected_item()
         self.el_form_w.setVisible(item is not None)
         self.el_empty.setVisible(item is None)
@@ -787,6 +1002,7 @@ class DesignerPage(QWidget):
         self.e_align.setCurrentIndex(max(0, self.e_align.findData(el.align)))
         self.e_thick.setValue(el.thickness_mm)
         self.e_name.setText(el.name)
+        self.e_lock.setChecked(el.locked)
         is_text, is_shape = el.kind == "text", el.kind in ("rect", "line")
         self.el_form.setRowVisible(self.e_source, is_text)
         self.el_form.setRowVisible(self.e_text, is_text and not el.field)
@@ -813,10 +1029,15 @@ class DesignerPage(QWidget):
         el.auto_fit = self.e_fit.isChecked()
         el.align = self.e_align.currentData()
         el.thickness_mm = self.e_thick.value()
+        renamed = el.name != self.e_name.text().strip() or el.locked != self.e_lock.isChecked()
         el.name = self.e_name.text().strip()
+        el.locked = self.e_lock.isChecked()
+        item.apply_lock()
         item.refresh()
         item.move_exact(self.e_x.value(), self.e_y.value())
         self._fill_element_form(el)
+        if renamed or el.kind == "text":
+            self._refresh_layers()
         self._changed()
 
     # ================================================================ label

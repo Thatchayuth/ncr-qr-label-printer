@@ -53,7 +53,14 @@ class ElementItem(QGraphicsObject):
         self.setAcceptHoverEvents(True)
         self.setCursor(Qt.CursorShape.SizeAllCursor)
         self.setPos(el.x_mm, el.y_mm)
+        self.apply_lock()
         self.refresh()
+
+    def apply_lock(self) -> None:
+        movable = not self.el.locked
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, movable)
+        self.setCursor(Qt.CursorShape.SizeAllCursor if movable else Qt.CursorShape.ArrowCursor)
+        self.update()
 
     # ----------------------------------------------------------- rendering
 
@@ -87,14 +94,16 @@ class ElementItem(QGraphicsObject):
         else:
             painter.fillRect(QRectF(0, 0, fw, fh), QColor(37, 99, 235, 18))
         if self.isSelected():
-            pen = QPen(SELECT_COLOR, 0)
+            pen = QPen(QColor("#64748B") if self.el.locked else SELECT_COLOR, 0,
+                       Qt.PenStyle.DashLine if self.el.locked else Qt.PenStyle.SolidLine)
             pen.setCosmetic(True)
             pen.setWidth(2)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(QRectF(0, 0, fw, fh))
-            painter.setBrush(QBrush(QColor("#FFFFFF")))
-            painter.drawRect(self._handle_rect())
+            if not self.el.locked:
+                painter.setBrush(QBrush(QColor("#FFFFFF")))
+                painter.drawRect(self._handle_rect())
         else:
             pen = QPen(QColor(148, 163, 184), 0, Qt.PenStyle.DotLine)
             pen.setCosmetic(True)
@@ -136,12 +145,15 @@ class ElementItem(QGraphicsObject):
         return super().itemChange(change, value)
 
     def hoverMoveEvent(self, event) -> None:
+        if self.el.locked:
+            super().hoverMoveEvent(event)
+            return
         on_handle = self.isSelected() and self._handle_rect().adjusted(-0.5, -0.5, 0.5, 0.5).contains(event.pos())
         self.setCursor(Qt.CursorShape.SizeFDiagCursor if on_handle else Qt.CursorShape.SizeAllCursor)
         super().hoverMoveEvent(event)
 
     def mousePressEvent(self, event) -> None:
-        if self.isSelected() and self._handle_rect().adjusted(-0.5, -0.5, 0.5, 0.5).contains(event.pos()):
+        if not self.el.locked and self.isSelected() and self._handle_rect().adjusted(-0.5, -0.5, 0.5, 0.5).contains(event.pos()):
             self._resizing = True
             event.accept()
             return

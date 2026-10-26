@@ -128,6 +128,7 @@ class LabelElement:
     min_font_mm: float = 1.8
     thickness_mm: float = 0.3
     name: str = ""
+    locked: bool = False  # designer only: cannot be moved / resized on the canvas
 
 
 @dataclass
