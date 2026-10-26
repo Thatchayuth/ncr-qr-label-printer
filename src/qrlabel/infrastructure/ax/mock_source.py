@@ -9,7 +9,7 @@ from typing import Any
 
 from ...domain.errors import ValidationError
 from ...domain.models import DataProfile
-from ...services.query_builder import HARD_ROW_LIMIT, check_range_field, in_range
+from ...services.query_builder import HARD_ROW_LIMIT, check_range_field, in_range, parse_text_filter
 
 MOCK_COMPANY = "smp"
 
@@ -53,12 +53,12 @@ class MockDataSource:
                 raise ValidationError("Company (DATAAREAID) is required for this profile.")
             rows = [r for r in rows if str(r.get(profile.dataarea_column.upper(), "")).lower() == company.strip().lower()]
         for column, text in criteria.items():
-            text = (text or "").strip().lower()
-            if text:
+            if (text or "").strip():
                 fd = profile.get_field(column)
                 if fd is None or not fd.searchable:
                     raise ValidationError(f"Field '{column}' is not searchable in this profile.")
-                rows = [r for r in rows if text in str(r.get(column.upper(), "")).lower()]
+                flt = parse_text_filter(text, fd.label)
+                rows = [r for r in rows if flt.matches(r.get(column.upper()))]
         for column, rng in (ranges or {}).items():
             if rng[0] is None and rng[1] is None:
                 continue

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -17,7 +18,64 @@ from ..domain.models import DataProfile
 
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 HARD_ROW_LIMIT = 5000
-MAX_CRITERIA_LENGTH = 100
+MAX_CRITERIA_LENGTH = 5000  # whole search box (lists pasted from Excel can be long)
+MAX_TERM_LENGTH = 100
+MAX_TERMS = 200
+
+_SPLIT_RE = re.compile(r"[,;\r\n\t]+")
+_RANGE_RE = re.compile(r"\s*\.{2,}\s*")
+
+
+@dataclass(frozen=True)
+class TextFilter:
+    """Parsed search box.
+
+    "abc"            -> contains "abc"
+    "A..B"           -> A <= value <= B
+    "A, B; C" / lines -> exact values (each piece may also be a range)
+    """
+
+    contains: str | None = None
+    exact: tuple[str, ...] = ()
+    ranges: tuple[tuple[str, str], ...] = ()
+
+    def matches(self, value: Any) -> bool:
+        """Python equivalent of the SQL filter (case-insensitive, like the AX collation)."""
+        v = str(value if value is not None else "").strip().upper()
+        if self.contains is not None:
+            return self.contains.upper() in v
+        if v in {e.upper() for e in self.exact}:
+            return True
+        return any(a.upper() <= v <= b.upper() for a, b in self.ranges)
+
+
+def parse_text_filter(text: str, label: str = "Search") -> TextFilter | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    if len(text) > MAX_CRITERIA_LENGTH:
+        raise ValidationError(f"Search text for '{label}' is too long.")
+    pieces = [p.strip() for p in _SPLIT_RE.split(text) if p.strip()]
+    if len(pieces) > MAX_TERMS:
+        raise ValidationError(f"'{label}': at most {MAX_TERMS} values can be searched at once.")
+    exact: list[str] = []
+    ranges: list[tuple[str, str]] = []
+    for p in pieces:
+        if len(p) > MAX_TERM_LENGTH:
+            raise ValidationError(f"'{label}': value '{p[:20]}...' is too long.")
+        if _RANGE_RE.search(p):
+            parts = _RANGE_RE.split(p)
+            if len(parts) != 2 or not parts[0] or not parts[1]:
+                raise ValidationError(f"'{label}': a range must look like FROM..TO (got '{p}').")
+            a, b = parts
+            if a.upper() > b.upper():
+                a, b = b, a
+            ranges.append((a, b))
+        else:
+            exact.append(p)
+    if len(pieces) == 1 and exact:
+        return TextFilter(contains=exact[0])
+    return TextFilter(exact=tuple(dict.fromkeys(exact)), ranges=tuple(ranges))
 
 
 def quote_ident(name: str) -> str:
@@ -89,16 +147,25 @@ def build_select(
         params.append(company)
 
     for column, text in criteria.items():
-        text = (text or "").strip()
-        if not text:
+        if not (text or "").strip():
             continue
         fd = profile.get_field(column)
         if fd is None or not fd.searchable:
             raise ValidationError(f"Field '{column}' is not searchable in this profile.")
-        if len(text) > MAX_CRITERIA_LENGTH:
-            raise ValidationError(f"Search text for '{fd.label}' is too long.")
-        where.append(f"{check_col(fd.column)} LIKE ? ESCAPE '\\'")
-        params.append(f"%{escape_like(text)}%")
+        flt = parse_text_filter(text, fd.label)
+        q = check_col(fd.column)
+        if flt.contains is not None:
+            where.append(f"{q} LIKE ? ESCAPE '\\'")
+            params.append(f"%{escape_like(flt.contains)}%")
+            continue
+        alternatives: list[str] = []
+        if flt.exact:
+            alternatives.append(f"{q} IN ({', '.join('?' * len(flt.exact))})")
+            params.extend(flt.exact)
+        for a, b in flt.ranges:
+            alternatives.append(f"({q} >= ? AND {q} <= ?)")
+            params.extend([a, b])
+        where.append("(" + " OR ".join(alternatives) + ")")
 
     for column, (start, end) in (ranges or {}).items():
         if start is None and end is None:

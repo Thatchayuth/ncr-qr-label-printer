@@ -350,8 +350,16 @@ class SearchPrintPage(QWidget):
         i = 0
         for fd in profile.searchable_fields:
             edit = QLineEdit()
-            edit.setMaxLength(100)
-            edit.setPlaceholderText("contains...")
+            edit.setMaxLength(5000)
+            edit.setPlaceholderText("contains…  ·  A..B  ·  A, B, C")
+            edit.setToolTip(
+                "<b>How to search</b><br>"
+                "<code>FA-IT-5-26</code> &nbsp;contains this text<br>"
+                "<code>FA-IT-5-26-0001..FA-IT-5-26-0010</code> &nbsp;range (use full numbers)<br>"
+                "<code>FA-IT-5-26-0001, FA-IT-5-26-0005</code> &nbsp;exactly these<br>"
+                "Separate values with comma, semicolon or new line (paste a column from Excel).<br>"
+                "Ranges and single values can be mixed."
+            )
             edit.setClearButtonEnabled(True)
             edit.returnPressed.connect(self._search)
             self.criteria_grid.addWidget(labeled(fd.label, edit), i // 2, i % 2)

@@ -16,10 +16,14 @@ def test_basic_select(profile):
 
 
 def test_user_input_never_in_sql(profile):
-    evil = "x'; DROP TABLE AssetTable; --"
+    evil = "x' OR '1'='1"  # single value -> LIKE parameter
+    sql, params = build_select(profile, {"ASSETID": evil}, "dat", approved_sources=APPROVED)
+    assert "'1'" not in sql
+    assert params[1] == f"%{evil}%"
+    evil = "x'; DROP TABLE AssetTable; --"  # ';' splits into a list -> IN parameters
     sql, params = build_select(profile, {"ASSETID": evil}, "dat", approved_sources=APPROVED)
     assert "DROP" not in sql
-    assert params[1] == f"%{evil}%"
+    assert params[1:] == ["x'", "DROP TABLE AssetTable", "--"]
 
 
 def test_like_wildcards_escaped():
@@ -98,3 +102,55 @@ def test_no_company_filter_when_policy_disabled(profile):
     profile.dataarea_column = ""
     sql, params = build_select(profile, {}, "", approved_sources=APPROVED)
     assert "DATAAREAID" not in sql and params == []
+
+
+# ------------------------------------------------------------ list / range
+
+
+from qrlabel.services.query_builder import parse_text_filter  # noqa: E402
+
+
+def test_parse_single_is_contains():
+    assert parse_text_filter(" FA-IT ").contains == "FA-IT"
+
+
+def test_parse_range_and_list():
+    f = parse_text_filter("A-0001..A-0003, A-0010; A-0010\r\nA-0020")
+    assert f.contains is None
+    assert f.ranges == (("A-0001", "A-0003"),)
+    assert f.exact == ("A-0010", "A-0020")  # duplicates removed, order kept
+
+
+def test_parse_range_variants():
+    assert parse_text_filter("B...A").ranges == (("A", "B"),)  # three dots, reversed bounds
+    assert parse_text_filter("A .. B").ranges == (("A", "B"),)
+    with pytest.raises(ValidationError):
+        parse_text_filter("A..")
+    with pytest.raises(ValidationError):
+        parse_text_filter("A..B..C")
+
+
+def test_parse_limits():
+    with pytest.raises(ValidationError):
+        parse_text_filter(",".join(str(i) for i in range(201)))
+    with pytest.raises(ValidationError):
+        parse_text_filter("x" * 101 + ",y")
+
+
+def test_matches_case_insensitive():
+    f = parse_text_filter("fa-0001..fa-0003, FA-0010")
+    assert f.matches("FA-0002") and f.matches("fa-0010")
+    assert not f.matches("FA-0004") and not f.matches(None)
+
+
+def test_sql_for_range_and_list(profile):
+    sql, params = build_select(profile, {"ASSETID": "A1..A3, B7, B9"}, "db1", approved_sources=APPROVED)
+    assert "([ASSETID] IN (?, ?) OR ([ASSETID] >= ? AND [ASSETID] <= ?))" in sql
+    assert params == ["db1", "B7", "B9", "A1", "A3"]
+    assert "LIKE" not in sql
+
+
+def test_sql_list_values_are_parameters(profile):
+    evil = "x') OR 1=1 --, y"
+    sql, params = build_select(profile, {"ASSETID": evil}, "db1", approved_sources=APPROVED)
+    assert "OR 1=1" not in sql and "x') OR 1=1 --" in params
