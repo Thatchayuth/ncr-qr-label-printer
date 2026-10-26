@@ -24,16 +24,14 @@ def _already_running() -> bool:
 
 
 def main() -> int:
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import Qt, QTimer
     from PySide6.QtGui import QFont, QGuiApplication, QIcon
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     from qrlabel import __version__
-    from qrlabel.app.context import AppContext
     from qrlabel.app.logging_setup import setup_logging
     from qrlabel.app.paths import log_dir, resource_path
-    from qrlabel.ui.main_window import MainWindow
-    from qrlabel.ui.theme import QSS
+    from qrlabel.ui.splash import SplashScreen
 
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
@@ -63,22 +61,41 @@ def main() -> int:
     font.setFamilies(["Segoe UI", "Leelawadee UI", "Tahoma"])  # Leelawadee/Tahoma render Thai
     font.setPointSize(10)
     app.setFont(font)
-    app.setStyleSheet(QSS)
 
+    splash = SplashScreen()
+    splash.start()
     try:
+        splash.step("Loading components...", 15)
+        from qrlabel.app.context import AppContext
+        from qrlabel.ui.main_window import MainWindow
+        from qrlabel.ui.theme import QSS
+
+        app.setStyleSheet(QSS)
+        splash.step("Loading settings and local database...", 40)
         ctx = AppContext()
+        splash.step("Preparing screens...", 70)
+        window = MainWindow(ctx)
+        splash.step("Almost ready...", 92)
     except Exception as e:
         log.exception("Startup failed")
+        splash.close()
         QMessageBox.critical(None, "Cannot start", f"The application could not start:\n{e}\n\nLog: {log_file}")
         return 1
 
-    window = MainWindow(ctx)
-    window.show()
-    if ctx.first_run:
+    def run_first_setup() -> None:
         from qrlabel.ui.first_run import FirstRunWizard
 
         FirstRunWizard(ctx, window).exec()
         window.refresh_after_setup()
+
+    def show_main() -> None:
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        if ctx.first_run:
+            QTimer.singleShot(350, run_first_setup)
+
+    splash.finish(show_main)
     code = app.exec()
     log.info("Application exit code=%s", code)
     return code
