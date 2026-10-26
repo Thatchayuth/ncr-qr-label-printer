@@ -1,0 +1,13 @@
+[project]
+name = "ncr-qr-label-printer"
+version = "0.1.0"
+description = "NCR QR Label Printer - search Dynamics AX 4.0 data and print QR labels on TSC TE200"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests/unit", "tests/integration"]
+markers = [
+    "hardware: needs a real TSC printer (run manually, see tests/hardware/README.md)",
+]

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+out/
+*.spec.bak
+*.prn
+*.log
+.idea/
+.vscode/
+NCRQRLabelPrinter.spec

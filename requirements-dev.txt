@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest==9.1.1
+pyinstaller==6.22.3
+# Used only by tests / the QR "test decode" check. Optional at runtime.
+opencv-python-headless==5.0.0.93
