@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
 
 from ..app.context import AppContext
 from .icons import icon, pixmap
+from .pages.designer_page import DesignerPage
 from .pages.history_page import HistoryPage
+from .pages.qr_config_page import QrConfigPage
 from .pages.info_pages import DiagnosticsPage, ReadOnlyJsonPage
 from .pages.printer_page import PrinterPage
 from .pages.search_print import SearchPrintPage
@@ -57,8 +59,8 @@ class MainWindow(QMainWindow):
             ]),
             ("LABEL SETUP", [
                 ("Data Profiles", "table", ReadOnlyJsonPage(ctx, "Data Profiles", "Profile editor arrives in Phase 2. Current profiles:", "profiles")),
-                ("QR Configuration", "qr", ReadOnlyJsonPage(ctx, "QR Configuration", "QR builder editor arrives in Phase 3. Current QR settings:", "qr")),
-                ("Label Designer", "layout", ReadOnlyJsonPage(ctx, "Label Designer", "Visual designer arrives in Phase 3. Current templates:", "templates")),
+                ("QR Configuration", "qr", QrConfigPage(ctx)),
+                ("Label Designer", "layout", DesignerPage(ctx)),
             ]),
             ("SYSTEM", [
                 ("Printer Settings", "printer", PrinterPage(ctx, on_saved=self._settings_changed)),
@@ -161,6 +163,7 @@ class MainWindow(QMainWindow):
         page = self.pages[index][1]
         if page is self.search_page:
             page._refresh_printer_label()
+            page.refresh_definitions()
         elif hasattr(page, "reload"):
             page.reload()
 

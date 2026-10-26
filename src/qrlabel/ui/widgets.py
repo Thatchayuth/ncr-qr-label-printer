@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -94,6 +95,7 @@ def labeled(label: str, widget: QWidget) -> QWidget:
 def chip(text: str = "", gray: bool = False) -> QLabel:
     c = QLabel(text)
     c.setObjectName("ChipGray" if gray else "Chip")
+    c.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     return c
 
 

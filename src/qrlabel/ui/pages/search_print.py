@@ -291,6 +291,26 @@ class SearchPrintPage(QWidget):
         if last_t >= 0:
             self.template_combo.setCurrentIndex(last_t)
 
+    def refresh_definitions(self) -> None:
+        """Pick up newly saved profile/template versions without clearing the search or results."""
+        pid, tid = self.profile_combo.currentData(), self.template_combo.currentData()
+        self.profiles = self.ctx.profiles.list_latest()
+        self.templates = self.ctx.templates.list_latest()
+        self.profile_combo.blockSignals(True)
+        for i in range(self.profile_combo.count()):
+            p = next((x for x in self.profiles if x.id == self.profile_combo.itemData(i)), None)
+            if p:
+                self.profile_combo.setItemText(i, f"{p.name}  (v{p.version})")
+        self.profile_combo.blockSignals(False)
+        self.template_combo.blockSignals(True)
+        self.template_combo.clear()
+        for t in self.templates:
+            self.template_combo.addItem(icon("qr", "#64748B"), f"{t.name}  (v{t.version})", t.id)
+        self.template_combo.setCurrentIndex(max(0, self.template_combo.findData(tid)))
+        self.template_combo.blockSignals(False)
+        if self.profile_combo.findData(pid) >= 0:
+            self._update_preview()
+
     def _refresh_printer_label(self) -> None:
         try:
             self.printer_label.setText(self.ctx.printer_adapter().target)

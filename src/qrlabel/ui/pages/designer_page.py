@@ -1,0 +1,718 @@
+"""Label Designer page."""
+from __future__ import annotations
+
+import copy
+from pathlib import Path
+
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ...app.context import AppContext
+from ...app.defaults import default_asset_template
+from ...domain.layout import TE200_MAX_PRINT_WIDTH_MM, validate_template
+from ...domain.models import DataProfile, LabelElement, LabelTemplate, new_id
+from ...services.formatting import build_label_values
+from ...services.template_io import duplicate_template, export_template, import_template
+from ..designer.canvas import ElementItem, LabelScene, LabelView, footprint
+from ..icons import icon
+from ..widgets import Banner, Card, chip, page_header
+from ..workers import error_text
+
+STATIC_TEXT = "__static__"
+
+
+def _mm_spin(lo: float = 0.0, hi: float = 300.0, step: float = 0.5, decimals: int = 1) -> QDoubleSpinBox:
+    s = QDoubleSpinBox()
+    s.setRange(lo, hi)
+    s.setSingleStep(step)
+    s.setDecimals(decimals)
+    s.setSuffix(" mm")
+    s.setKeyboardTracking(False)
+    return s
+
+
+def _tool_button(text: str, icon_name: str, tip: str) -> QPushButton:
+    b = QPushButton(text)
+    b.setIcon(icon(icon_name, "#334155", size=16))
+    b.setIconSize(QSize(16, 16))
+    b.setToolTip(tip)
+    return b
+
+
+class DesignerPage(QWidget):
+    def __init__(self, ctx: AppContext) -> None:
+        super().__init__()
+        self.ctx = ctx
+        self.template: LabelTemplate | None = None  # working copy being edited
+        self.saved_version = 0
+        self.dirty = False
+        self.items: list[ElementItem] = []
+        self.profile: DataProfile | None = None
+        self.values: dict[str, str] = {}
+        self.qr_text: str | None = None
+        self.ecc = "M"
+        self.snap_step = 0.5
+        self._loading = False
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(32, 28, 32, 28)
+        root.setSpacing(18)
+        root.addWidget(page_header(
+            "Label Designer",
+            "Design the sticker in millimetres. The canvas uses the same renderer as the printer.",
+        ))
+        root.addWidget(self._build_template_bar())
+
+        body = QHBoxLayout()
+        body.setSpacing(18)
+        root.addLayout(body, 1)
+        body.addWidget(self._build_canvas_card(), 1)
+
+        side = QWidget()
+        side.setFixedWidth(340)
+        sl = QVBoxLayout(side)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(18)
+        sl.addWidget(self._build_element_card())
+        sl.addWidget(self._build_label_card())
+        sl.addStretch(1)
+        body.addWidget(side)
+
+        self.reload()
+
+    # ================================================================ build UI
+
+    def _build_template_bar(self) -> Card:
+        card = Card()
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        lbl = QLabel("Template")
+        lbl.setObjectName("FieldLabel")
+        self.template_combo = QComboBox()
+        self.template_combo.setMinimumWidth(280)
+        self.state_chip = chip("", gray=True)
+        row.addWidget(lbl)
+        row.addWidget(self.template_combo)
+        row.addWidget(self.state_chip)
+        row.addStretch(1)
+        self.new_btn = QPushButton("New")
+        self.dup_btn = QPushButton("Duplicate")
+        self.import_btn = QPushButton("Import...")
+        self.export_btn = QPushButton("Export...")
+        self.revert_btn = QPushButton("Revert")
+        self.save_btn = QPushButton("  Save")
+        self.save_btn.setObjectName("Primary")
+        self.save_btn.setIcon(icon("check", "#FFFFFF", size=16))
+        for b in (self.new_btn, self.dup_btn, self.import_btn, self.export_btn, self.revert_btn, self.save_btn):
+            row.addWidget(b)
+        card.body.addLayout(row)
+        self.banner = Banner()
+        card.body.addWidget(self.banner)
+
+        self.template_combo.activated.connect(self._on_template_chosen)
+        self.new_btn.clicked.connect(self._new)
+        self.dup_btn.clicked.connect(self._duplicate)
+        self.import_btn.clicked.connect(self._import)
+        self.export_btn.clicked.connect(self._export)
+        self.revert_btn.clicked.connect(self._revert)
+        self.save_btn.clicked.connect(self._save)
+        return card
+
+    def _build_canvas_card(self) -> Card:
+        card = Card()
+        tools = QHBoxLayout()
+        tools.setSpacing(6)
+        add_lbl = QLabel("Add")
+        add_lbl.setObjectName("FieldLabel")
+        tools.addWidget(add_lbl)
+        for text, ic, tip, kind in [
+            ("Field", "table", "Text from a data field (e.g. Asset ID)", "field"),
+            ("Text", "layout", "Fixed text", "text"),
+            ("QR", "qr", "QR code (content from QR Configuration)", "qr"),
+            ("Box", "layout", "Rectangle", "rect"),
+            ("Line", "minus", "Horizontal line", "line"),
+        ]:
+            b = _tool_button(text, ic, tip)
+            b.clicked.connect(lambda _=False, k=kind: self._add_element(k))
+            tools.addWidget(b)
+        self.delete_btn = _tool_button("", "x", "Delete selected element (Del)")
+        tools.addWidget(self.delete_btn)
+        tools.addStretch(1)
+        self.align_combo = QComboBox()
+        self.align_combo.addItems(["Align...", "Center horizontally", "Center vertically", "Left margin", "Right margin", "Top margin", "Bottom margin"])
+        self.align_combo.setToolTip("Align the selected element on the label")
+        tools.addWidget(self.align_combo)
+        card.body.addLayout(tools)
+
+        self.scene = LabelScene()
+        self.view = LabelView(self.scene)
+        self.view.setMinimumHeight(420)
+        card.body.addWidget(self.view, 1)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        sample_lbl = QLabel("Sample data")
+        sample_lbl.setObjectName("FieldLabel")
+        self.sample_edit = QLineEdit("FA-IT-5-26-0001")
+        self.sample_edit.setMaximumWidth(200)
+        self.sample_edit.setToolTip("Value used for the first profile field (e.g. Asset ID) on the canvas")
+        self.grid_check = QCheckBox("Grid")
+        self.grid_check.setChecked(True)
+        self.snap_combo = QComboBox()
+        for label, step in [("Snap 0.5 mm", 0.5), ("Snap 1 mm", 1.0), ("Snap 0.1 mm", 0.1), ("No snap", 0.0)]:
+            self.snap_combo.addItem(label, step)
+        zoom_out = QPushButton()
+        zoom_out.setObjectName("Stepper")
+        zoom_out.setIcon(icon("minus"))
+        zoom_in = QPushButton()
+        zoom_in.setObjectName("Stepper")
+        zoom_in.setIcon(icon("plus"))
+        fit = QPushButton("Fit")
+        self.zoom_label = QLabel("")
+        self.zoom_label.setObjectName("Muted")
+        self.zoom_label.setMinimumWidth(48)
+        for w in (sample_lbl, self.sample_edit):
+            bottom.addWidget(w)
+        bottom.addStretch(1)
+        for w in (self.grid_check, self.snap_combo, zoom_out, self.zoom_label, zoom_in, fit):
+            bottom.addWidget(w)
+        card.body.addLayout(bottom)
+        hint = QLabel("Drag to move · drag the corner square to resize · arrow keys nudge 0.5 mm (Shift = 0.1 mm) · Ctrl + wheel to zoom")
+        hint.setObjectName("Muted")
+        card.body.addWidget(hint)
+
+        self.delete_btn.clicked.connect(self._delete_selected)
+        self.align_combo.activated.connect(self._align)
+        self.scene.selectionChanged.connect(self._on_selection)
+        self.view.nudge.connect(self._nudge)
+        self.view.delete_pressed.connect(self._delete_selected)
+        self.view.zoom_changed.connect(lambda z: self.zoom_label.setText(f"{z / 4:.0%}"))
+        zoom_in.clicked.connect(lambda: self.view.set_zoom(self.view.zoom * 1.25))
+        zoom_out.clicked.connect(lambda: self.view.set_zoom(self.view.zoom / 1.25))
+        fit.clicked.connect(self.view.fit)
+        self.grid_check.toggled.connect(self._on_grid)
+        self.snap_combo.currentIndexChanged.connect(self._on_snap)
+        self.sample_edit.editingFinished.connect(self._refresh_sample)
+        return card
+
+    def _build_element_card(self) -> Card:
+        card = Card("Selected element")
+        self.el_kind_chip = chip("", gray=True)
+        card.header.addWidget(self.el_kind_chip)
+        self.el_empty = QLabel("Click an element on the canvas to edit it.")
+        self.el_empty.setObjectName("Muted")
+        self.el_empty.setWordWrap(True)
+        card.body.addWidget(self.el_empty)
+
+        self.el_form_w = QWidget()
+        f = QFormLayout(self.el_form_w)
+        f.setContentsMargins(0, 0, 0, 0)
+        f.setHorizontalSpacing(12)
+        f.setVerticalSpacing(8)
+        self.e_x, self.e_y = _mm_spin(), _mm_spin()
+        self.e_w, self.e_h = _mm_spin(0, 300), _mm_spin(0, 300)
+        pos = QHBoxLayout()
+        pos.addWidget(self.e_x)
+        pos.addWidget(self.e_y)
+        size = QHBoxLayout()
+        size.addWidget(self.e_w)
+        size.addWidget(self.e_h)
+        self.e_rot = QComboBox()
+        for r in (0, 90, 180, 270):
+            self.e_rot.addItem(f"{r}°", r)
+        self.e_source = QComboBox()
+        self.e_text = QLineEdit()
+        self.e_text.setPlaceholderText("Text, or {COLUMN} placeholders")
+        self.e_font = _mm_spin(0.8, 30, 0.1, 1)
+        self.e_bold = QCheckBox("Bold")
+        self.e_fit = QCheckBox("Shrink to fit")
+        font_row = QHBoxLayout()
+        font_row.addWidget(self.e_font)
+        font_row.addWidget(self.e_bold)
+        self.e_align = QComboBox()
+        for label, key in (("Left", "left"), ("Center", "center"), ("Right", "right")):
+            self.e_align.addItem(label, key)
+        self.e_thick = _mm_spin(0.1, 5, 0.1, 2)
+        self.e_name = QLineEdit()
+
+        f.addRow("Position X / Y", pos)
+        f.addRow("Size W / H", size)
+        f.addRow("Rotation", self.e_rot)
+        f.addRow("Content", self.e_source)
+        f.addRow("Text", self.e_text)
+        self.FONT_ROW = f.rowCount()
+        f.addRow("Font size", font_row)
+        f.addRow("", self.e_fit)
+        f.addRow("Align", self.e_align)
+        f.addRow("Line thickness", self.e_thick)
+        f.addRow("Name", self.e_name)
+        self.el_form = f
+        card.body.addWidget(self.el_form_w)
+        self.el_form_w.hide()
+
+        for s in (self.e_x, self.e_y, self.e_w, self.e_h, self.e_font, self.e_thick):
+            s.valueChanged.connect(self._on_element_edit)
+        for c in (self.e_rot, self.e_source, self.e_align):
+            c.currentIndexChanged.connect(self._on_element_edit)
+        for c in (self.e_bold, self.e_fit):
+            c.toggled.connect(self._on_element_edit)
+        self.e_text.editingFinished.connect(self._on_element_edit)
+        self.e_name.editingFinished.connect(self._on_element_edit)
+        return card
+
+    def _build_label_card(self) -> Card:
+        card = Card("Label settings")
+        f = QFormLayout()
+        f.setHorizontalSpacing(12)
+        f.setVerticalSpacing(8)
+        self.l_name = QLineEdit()
+        self.l_w = _mm_spin(5, TE200_MAX_PRINT_WIDTH_MM)
+        self.l_h = _mm_spin(5, 300)
+        size = QHBoxLayout()
+        size.addWidget(self.l_w)
+        size.addWidget(self.l_h)
+        self.l_gap = _mm_spin(0, 20)
+        self.l_media = QComboBox()
+        for label, key in (("Gap (die-cut stickers)", "gap"), ("Black mark", "bline"), ("Continuous", "continuous")):
+            self.l_media.addItem(label, key)
+        self.l_margin = _mm_spin(0, 10)
+        self.l_density = QSpinBox()
+        self.l_density.setRange(0, 15)
+        self.l_speed = QSpinBox()
+        self.l_speed.setRange(2, 6)
+        self.l_speed.setSuffix(" ips")
+        ds = QHBoxLayout()
+        ds.addWidget(self.l_density)
+        ds.addWidget(self.l_speed)
+        self.l_direction = QComboBox()
+        self.l_direction.addItem("Normal (1)", 1)
+        self.l_direction.addItem("Reversed (0)", 0)
+        self.l_qr_mode = QComboBox()
+        self.l_qr_mode.addItem("Bitmap (exact preview)", "bitmap")
+        self.l_qr_mode.addItem("Printer QR command", "native")
+        self.l_text_mode = QComboBox()
+        self.l_text_mode.addItem("Bitmap (Thai OK)", "bitmap")
+        self.l_text_mode.addItem("Auto", "auto")
+        self.l_text_mode.addItem("Printer fonts (ASCII)", "native")
+        f.addRow("Name", self.l_name)
+        f.addRow("Width / Height", size)
+        f.addRow("Gap", self.l_gap)
+        f.addRow("Media", self.l_media)
+        f.addRow("Safe margin", self.l_margin)
+        f.addRow("Density / Speed", ds)
+        f.addRow("Direction", self.l_direction)
+        f.addRow("QR output", self.l_qr_mode)
+        f.addRow("Text output", self.l_text_mode)
+        card.body.addLayout(f)
+        self.issues = QLabel("")
+        self.issues.setWordWrap(True)
+        card.body.addWidget(self.issues)
+
+        for s in (self.l_w, self.l_h, self.l_gap, self.l_margin):
+            s.valueChanged.connect(self._on_label_edit)
+        for s in (self.l_density, self.l_speed):
+            s.valueChanged.connect(self._on_label_edit)
+        for c in (self.l_media, self.l_direction, self.l_qr_mode, self.l_text_mode):
+            c.currentIndexChanged.connect(self._on_label_edit)
+        self.l_name.editingFinished.connect(self._on_label_edit)
+        return card
+
+    # ============================================================ templates
+
+    def reload(self) -> None:
+        """Refresh the template list. Keeps unsaved work on screen."""
+        current = self.template.id if self.template else None
+        self._fill_combo(select=current)
+        if self.template is None:
+            self._open(self.template_combo.currentData())
+
+    def _fill_combo(self, select: str | None) -> None:
+        self.template_combo.blockSignals(True)
+        self.template_combo.clear()
+        for t in self.ctx.templates.list_latest():
+            self.template_combo.addItem(icon("qr", "#64748B"), f"{t.name}  (v{t.version})", t.id)
+        if self.template and self.template_combo.findData(self.template.id) < 0:
+            self.template_combo.addItem(f"{self.template.name}  (new, not saved)", self.template.id)
+        idx = self.template_combo.findData(select) if select else 0
+        self.template_combo.setCurrentIndex(max(0, idx))
+        self.template_combo.blockSignals(False)
+
+    def _confirm_discard(self) -> bool:
+        if not self.dirty:
+            return True
+        answer = QMessageBox.question(self, "Unsaved changes", "Discard the unsaved changes to this template?")
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _on_template_chosen(self, _index: int) -> None:
+        tid = self.template_combo.currentData()
+        if self.template and tid == self.template.id:
+            return
+        if not self._confirm_discard():
+            self._fill_combo(select=self.template.id if self.template else None)
+            return
+        self._open(tid)
+
+    def _open(self, template_id: str | None) -> None:
+        t = self.ctx.templates.get(template_id) if template_id else None
+        if t is None:
+            return
+        self._load(t, saved_version=t.version)
+
+    def _load(self, t: LabelTemplate, saved_version: int) -> None:
+        self.template = copy.deepcopy(t)
+        self.saved_version = saved_version
+        self._pick_profile()
+        self._build_values()
+        self._loading = True
+        self.l_name.setText(t.name)
+        self.l_w.setValue(t.width_mm)
+        self.l_h.setValue(t.height_mm)
+        self.l_gap.setValue(t.gap_mm)
+        self.l_media.setCurrentIndex(max(0, self.l_media.findData(t.media)))
+        self.l_margin.setValue(t.margin_mm)
+        self.l_density.setValue(t.density)
+        self.l_speed.setValue(t.speed)
+        self.l_direction.setCurrentIndex(max(0, self.l_direction.findData(t.direction)))
+        self.l_qr_mode.setCurrentIndex(max(0, self.l_qr_mode.findData(t.qr_mode)))
+        self.l_text_mode.setCurrentIndex(max(0, self.l_text_mode.findData(t.text_mode)))
+        self._loading = False
+        self._rebuild_scene()
+        self._set_dirty(False)
+        QTimer.singleShot(0, self.view.fit)
+
+    def _pick_profile(self) -> None:
+        profiles = self.ctx.profiles.list_latest()
+        t = self.template
+        self.profile = next((p for p in profiles if t and p.template_id == t.id), profiles[0] if profiles else None)
+        self.e_source.blockSignals(True)
+        self.e_source.clear()
+        self.e_source.addItem("Fixed text", STATIC_TEXT)
+        for fd in self.profile.fields if self.profile else []:
+            self.e_source.addItem(f"Field: {fd.label}", fd.column)
+        self.e_source.blockSignals(False)
+
+    def _build_values(self) -> None:
+        self.values, self.qr_text = {}, None
+        if not self.profile:
+            return
+        record = {}
+        for i, fd in enumerate(self.profile.fields):
+            record[fd.column.upper()] = self.sample_edit.text() if i == 0 else f"<{fd.label}>"
+        self.values = build_label_values(self.profile, record)
+        self.ecc = self.profile.qr.error_correction
+        try:
+            self.qr_text = self.ctx.payloads.build(record, self.profile).text
+        except Exception:
+            self.qr_text = self.sample_edit.text() or "SAMPLE"
+
+    def _render_ctx(self):
+        return self.template, self.values, self.qr_text, self.ecc, self.snap_step
+
+    def _rebuild_scene(self) -> None:
+        self.scene.clear()
+        self.items = []
+        self.scene.set_template(self.template)
+        for el in self.template.elements:
+            self._add_item(el)
+        self._on_selection()
+        self._validate()
+
+    def _add_item(self, el: LabelElement) -> ElementItem:
+        item = ElementItem(el, self._render_ctx)
+        item.changed.connect(self._on_item_changed)
+        self.scene.addItem(item)
+        self.items.append(item)
+        return item
+
+    def _set_dirty(self, dirty: bool) -> None:
+        self.dirty = dirty
+        t = self.template
+        if not t:
+            return
+        if dirty:
+            self.state_chip.setObjectName("Chip")
+            self.state_chip.setText("● Unsaved changes")
+        else:
+            self.state_chip.setObjectName("ChipGray")
+            self.state_chip.setText(f"Saved · v{self.saved_version}" if self.saved_version else "New")
+        self.state_chip.style().unpolish(self.state_chip)
+        self.state_chip.style().polish(self.state_chip)
+        self.revert_btn.setEnabled(dirty and self.saved_version > 0)
+
+    def _new(self) -> None:
+        if not self._confirm_discard():
+            return
+        t = default_asset_template()
+        t.id, t.name = new_id(), "New label"
+        if self.template:
+            t.width_mm, t.height_mm, t.gap_mm = self.template.width_mm, self.template.height_mm, self.template.gap_mm
+            t.elements = []
+        self._load(t, saved_version=0)
+        self._fill_combo(select=t.id)
+        self._set_dirty(True)
+
+    def _duplicate(self) -> None:
+        if not self.template:
+            return
+        t = duplicate_template(self.template)
+        self._load(t, saved_version=0)
+        self._fill_combo(select=t.id)
+        self._set_dirty(True)
+        self.banner.show_message("Copy created. Press Save to keep it.", "info")
+
+    def _import(self) -> None:
+        if not self._confirm_discard():
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Import label template", "", "Label template (*.json)")
+        if not path:
+            return
+        try:
+            t = import_template(Path(path))
+        except Exception as e:
+            self.banner.show_message(error_text(e), "error")
+            return
+        self._load(t, saved_version=0)
+        self._fill_combo(select=t.id)
+        self._set_dirty(True)
+        self.banner.show_message(f"Imported '{t.name}'. Press Save to keep it.", "info")
+
+    def _export(self) -> None:
+        if not self.template:
+            return
+        safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in self.template.name).strip() or "label"
+        path, _ = QFileDialog.getSaveFileName(self, "Export label template", f"{safe}.json", "Label template (*.json)")
+        if not path:
+            return
+        try:
+            export_template(self.template, Path(path))
+            self.banner.show_message(f"Exported to {path}", "success")
+        except Exception as e:
+            self.banner.show_message(error_text(e), "error")
+
+    def _revert(self) -> None:
+        if self.template and self.saved_version:
+            self._open(self.template.id)
+            self.banner.clear_message()
+
+    def _save(self) -> None:
+        if not self.template:
+            return
+        problems = validate_template(self.template)
+        if problems:
+            self.banner.show_message("Fix these before saving:\n• " + "\n• ".join(problems), "error")
+            return
+        try:
+            saved = self.ctx.templates.save(copy.deepcopy(self.template))
+        except Exception as e:
+            self.banner.show_message(error_text(e), "error")
+            return
+        self.template.version = saved.version
+        self.saved_version = saved.version
+        self._fill_combo(select=saved.id)
+        self._set_dirty(False)
+        self.banner.show_message(f"Saved '{saved.name}' as version {saved.version}. New prints use this version.", "success")
+
+    # ============================================================= elements
+
+    def selected_item(self) -> ElementItem | None:
+        sel = [i for i in self.items if i.isSelected()]
+        return sel[0] if len(sel) == 1 else None
+
+    def _add_element(self, kind: str) -> None:
+        t = self.template
+        if not t:
+            return
+        m = t.margin_mm
+        inner_w = max(1.0, t.width_mm - 2 * m)
+        if kind == "field":
+            col = self.profile.fields[0].column if self.profile and self.profile.fields else ""
+            el = LabelElement(kind="text", field=col, x_mm=m, y_mm=m, w_mm=inner_w, h_mm=5, font_mm=3, bold=True, align="center")
+        elif kind == "text":
+            el = LabelElement(kind="text", text="Text", x_mm=m, y_mm=m, w_mm=min(20.0, inner_w), h_mm=5, font_mm=3)
+        elif kind == "qr":
+            s = min(15.0, inner_w, t.height_mm - 2 * m)
+            el = LabelElement(kind="qr", x_mm=m, y_mm=m, w_mm=s, h_mm=s)
+        elif kind == "rect":
+            el = LabelElement(kind="rect", x_mm=m, y_mm=m, w_mm=inner_w, h_mm=max(1.0, t.height_mm - 2 * m), thickness_mm=0.3)
+        else:
+            el = LabelElement(kind="line", x_mm=m, y_mm=t.height_mm / 2, w_mm=inner_w, h_mm=0, thickness_mm=0.3)
+        t.elements.append(el)
+        item = self._add_item(el)
+        self.scene.clearSelection()
+        item.setSelected(True)
+        self._changed()
+
+    def _delete_selected(self) -> None:
+        for item in [i for i in self.items if i.isSelected()]:
+            self.template.elements.remove(item.el)
+            self.items.remove(item)
+            self.scene.removeItem(item)
+        self._on_selection()
+        self._changed()
+
+    def _nudge(self, dx: float, dy: float) -> None:
+        for item in [i for i in self.items if i.isSelected()]:
+            item.move_exact(item.pos().x() + dx, item.pos().y() + dy)
+
+    def _align(self, *_) -> None:
+        choice = self.align_combo.currentIndex()
+        self.align_combo.setCurrentIndex(0)
+        if choice == 0:
+            return
+        item = self.selected_item()
+        t = self.template
+        if not item or not t:
+            self.banner.show_message("Select one element to align.", "info")
+            return
+        fw, fh = footprint(item.el)
+        x, y = item.pos().x(), item.pos().y()
+        if choice == 1:
+            x = (t.width_mm - fw) / 2
+        elif choice == 2:
+            y = (t.height_mm - fh) / 2
+        elif choice == 3:
+            x = t.margin_mm
+        elif choice == 4:
+            x = t.width_mm - t.margin_mm - fw
+        elif choice == 5:
+            y = t.margin_mm
+        else:
+            y = t.height_mm - t.margin_mm - fh
+        item.move_exact(round(x, 2), round(y, 2))
+
+    def _on_item_changed(self, item: ElementItem) -> None:
+        if item is self.selected_item():
+            self._fill_element_form(item.el)
+        self._changed()
+
+    def _on_selection(self) -> None:
+        item = self.selected_item()
+        self.el_form_w.setVisible(item is not None)
+        self.el_empty.setVisible(item is None)
+        self.delete_btn.setEnabled(any(i.isSelected() for i in self.items))
+        if item is None:
+            n = sum(i.isSelected() for i in self.items)
+            self.el_empty.setText(f"{n} elements selected." if n > 1 else "Click an element on the canvas to edit it.")
+            self.el_kind_chip.setText("")
+            self.el_kind_chip.hide()
+            return
+        self._fill_element_form(item.el)
+
+    def _fill_element_form(self, el: LabelElement) -> None:
+        self._loading = True
+        kinds = {"text": "Field" if el.field else "Text", "qr": "QR code", "rect": "Box", "line": "Line"}
+        self.el_kind_chip.setText(kinds.get(el.kind, el.kind))
+        self.el_kind_chip.show()
+        self.e_x.setValue(el.x_mm)
+        self.e_y.setValue(el.y_mm)
+        self.e_w.setValue(el.w_mm)
+        self.e_h.setValue(el.h_mm)
+        self.e_rot.setCurrentIndex(max(0, self.e_rot.findData(el.rotation)))
+        self.e_source.setCurrentIndex(max(0, self.e_source.findData(el.field or STATIC_TEXT)))
+        self.e_text.setText(el.text)
+        self.e_font.setValue(el.font_mm)
+        self.e_bold.setChecked(el.bold)
+        self.e_fit.setChecked(el.auto_fit)
+        self.e_align.setCurrentIndex(max(0, self.e_align.findData(el.align)))
+        self.e_thick.setValue(el.thickness_mm)
+        self.e_name.setText(el.name)
+        is_text, is_shape = el.kind == "text", el.kind in ("rect", "line")
+        self.el_form.setRowVisible(self.e_source, is_text)
+        self.el_form.setRowVisible(self.e_text, is_text and not el.field)
+        self.el_form.setRowVisible(self.FONT_ROW, is_text)
+        self.el_form.setRowVisible(self.e_fit, is_text)
+        self.el_form.setRowVisible(self.e_align, is_text)
+        self.el_form.setRowVisible(self.e_thick, is_shape)
+        self._loading = False
+
+    def _on_element_edit(self, *_):
+        if self._loading:
+            return
+        item = self.selected_item()
+        if not item:
+            return
+        el = item.el
+        el.w_mm, el.h_mm = self.e_w.value(), self.e_h.value()
+        el.rotation = self.e_rot.currentData()
+        src = self.e_source.currentData()
+        el.field = "" if src in (None, STATIC_TEXT) else src
+        el.text = self.e_text.text()
+        el.font_mm = self.e_font.value()
+        el.bold = self.e_bold.isChecked()
+        el.auto_fit = self.e_fit.isChecked()
+        el.align = self.e_align.currentData()
+        el.thickness_mm = self.e_thick.value()
+        el.name = self.e_name.text().strip()
+        item.refresh()
+        item.move_exact(self.e_x.value(), self.e_y.value())
+        self._fill_element_form(el)
+        self._changed()
+
+    # ================================================================ label
+
+    def _on_label_edit(self, *_):
+        if self._loading or not self.template:
+            return
+        t = self.template
+        t.name = self.l_name.text().strip() or t.name
+        t.width_mm, t.height_mm = self.l_w.value(), self.l_h.value()
+        t.gap_mm, t.margin_mm = self.l_gap.value(), self.l_margin.value()
+        t.media = self.l_media.currentData()
+        t.density, t.speed = self.l_density.value(), self.l_speed.value()
+        t.direction = self.l_direction.currentData()
+        t.qr_mode, t.text_mode = self.l_qr_mode.currentData(), self.l_text_mode.currentData()
+        self.scene.set_template(t)
+        for item in self.items:
+            item.refresh()
+        self._changed()
+
+    def _on_grid(self, on: bool) -> None:
+        self.scene.show_grid = on
+        self.scene.update()
+
+    def _on_snap(self, *_):
+        self.snap_step = self.snap_combo.currentData()
+        self.scene.grid_step = self.snap_step if self.snap_step >= 0.5 else 1.0
+        self.scene.update()
+
+    def _refresh_sample(self) -> None:
+        self._build_values()
+        for item in self.items:
+            item.refresh()
+        self._validate()
+
+    def _changed(self) -> None:
+        self._set_dirty(True)
+        self._validate()
+
+    def _validate(self) -> None:
+        if not self.template:
+            return
+        problems = validate_template(self.template)
+        warnings = [w for item in self.items for w in item.warnings]
+        if not problems and not warnings:
+            self.issues.setStyleSheet("color: #047857;")
+            self.issues.setText("✓ Layout OK")
+            return
+        lines = [f"✕ {p}" for p in problems] + [f"⚠ {w}" for w in warnings]
+        self.issues.setStyleSheet("color: #B91C1C;" if problems else "color: #B45309;")
+        self.issues.setText("\n".join(lines))
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, self.view.fit)

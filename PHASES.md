@@ -82,18 +82,20 @@ Confirmed business facts (2026-10-26):
 
 ---
 
-## Phase 3 — QR Payload Engine and Label Designer ⬜ (engine ✅, editors ⬜)
+## Phase 3 — QR Payload Engine and Label Designer 🟡 (software done, hardware check ⛔)
 
-Already implemented and tested: payload builder (plain / delimited / JSON, prefix/suffix, null rules, byte limit, Unicode), shared raster renderer, TSPL renderer, template validation.
+Engine: payload builder (plain / delimited / JSON, prefix/suffix, null rules, byte limit, Unicode), shared raster renderer, TSPL renderer, template validation, auto-fit text.
 
-| # | Task |
-|---|---|
-| 3.1 | QR Configuration page: field order, format, delimiter, ECC, live payload preview, test-decode |
-| 3.2 | Label Designer (Qt Graphics View): mm canvas, zoom, grid/snap, drag/resize, text/QR/rect/line, rotation, font size/bold, margin & overflow checks |
-| 3.3 | Template save / duplicate / import / export (JSON), versioning |
-| 3.4 | Set the real sticker size from Phase 0.7 as the default template |
+| # | Task | Status |
+|---|---|---|
+| 3.1 | QR Configuration page: tick/order fields, format, separator, prefix/suffix, empty-field rule, ECC, max bytes, live preview, test with a real AX record, decode check (when OpenCV is present), save as new profile version | ✅ |
+| 3.2 | Label Designer: mm canvas, zoom (Ctrl+wheel, fit), grid, snap 0.1/0.5/1 mm, drag/resize, arrow-key nudge, Field/Text/QR/Box/Line, rotation, font size/bold/align/shrink-to-fit, alignment helpers, margin & overflow checks, label settings (size, gap, media, density, speed, direction, QR/text output mode) | ✅ |
+| 3.3 | Template New / Duplicate / Import / Export (JSON) / Revert; Save = new version; invalid layouts cannot be saved | ✅ |
+| 3.4 | Set the real sticker size from Phase 0.7 as the default template | ⛔ waiting for sticker size |
 
-**Acceptance:** preview vs printed sticker within ±0.5 mm on the TE200; QR scans; overflow is flagged before printing.
+**Tests (executed 2026-10-26):** 78 automated tests pass (adds template import/export/duplicate/snap). Offscreen UI run: edit + add line + snap + save → template v2 picked up by Search & Print; QR page decodes its own QR.
+
+**Acceptance still open:** preview vs printed sticker within ±0.5 mm on the TE200 (needs printer). Not included: undo/redo, multi-select alignment, images/logos.
 
 ---
 
