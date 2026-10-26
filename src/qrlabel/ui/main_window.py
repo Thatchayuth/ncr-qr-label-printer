@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..app.context import AppContext
+from .admin_gate import AdminGate
 from .icons import icon, pixmap
 from .pages.designer_page import DesignerPage
 from .pages.history_page import HistoryPage
@@ -64,7 +65,10 @@ class MainWindow(QMainWindow):
             ]),
             ("SYSTEM", [
                 ("Printer Settings", "printer", PrinterPage(ctx, on_saved=self._settings_changed)),
-                ("Application Settings", "sliders", SettingsPage(ctx, on_saved=self._settings_changed)),
+                ("Application Settings", "sliders", AdminGate(
+                    ctx, SettingsPage(ctx, on_saved=self._settings_changed),
+                    "Application Settings", "Connection to the Dynamics AX 4.0 SQL Server (read-only).",
+                )),
                 ("Diagnostics", "activity", DiagnosticsPage(ctx)),
             ]),
         ]
@@ -159,6 +163,9 @@ class MainWindow(QMainWindow):
         if row not in self._row_to_page:
             return
         index = self._row_to_page[row]
+        previous = self.pages[self.stack.currentIndex()][1] if self.pages else None
+        if isinstance(previous, AdminGate) and self.stack.currentIndex() != index:
+            previous.lock()  # leaving an admin page locks it again
         self.stack.setCurrentIndex(index)
         page = self.pages[index][1]
         if page is self.search_page:

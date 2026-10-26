@@ -53,6 +53,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "last_template_id": "",
         "copies": 1,
     },
+    "admin": {
+        "password_hash": "",  # empty = built-in initial password (see services.admin_auth)
+    },
 }
 
 SCHEMA: dict[str, Any] = {
@@ -94,6 +97,10 @@ SCHEMA: dict[str, Any] = {
             },
         },
         "ui": {"type": "object"},
+        "admin": {
+            "type": "object",
+            "properties": {"password_hash": {"type": "string", "maxLength": 300}},
+        },
     },
 }
 
@@ -181,11 +188,13 @@ class ConfigurationService:
     def export_config(self, config: dict[str, Any], target: Path) -> None:
         clean = copy.deepcopy(config)
         clean["database"]["password_dpapi"] = ""
+        clean.pop("admin", None)
         atomic_write_text(target, json.dumps(clean, indent=2, ensure_ascii=False))
 
     def import_config(self, source: Path) -> dict[str, Any]:
         data = json.loads(source.read_text(encoding="utf-8"))
         data.get("database", {}).pop("password_dpapi", None)
+        data.pop("admin", None)  # never take an admin password from an imported file
         merged = _deep_merge(DEFAULT_CONFIG, data)
         merged["config_version"] = CONFIG_VERSION
         self.validate(merged)

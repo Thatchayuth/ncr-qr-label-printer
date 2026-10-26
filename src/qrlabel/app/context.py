@@ -21,6 +21,7 @@ from ..infrastructure.storage.repositories import (
     SqliteProfileRepository,
     SqliteTemplateRepository,
 )
+from ..services.admin_auth import AdminAuth
 from ..services.print_service import PrintService
 from ..services.qr_payload import QrPayloadBuilder
 from . import paths
@@ -42,6 +43,7 @@ class AppContext:
         self.print_service = PrintService(
             self.jobs, __version__, payload_builder=self.payloads, profiles=self.profiles, templates=self.templates
         )
+        self.admin = AdminAuth(lambda: self.config, self.save_config)
         self._seed()
 
     def _seed(self) -> None:

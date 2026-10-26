@@ -89,3 +89,11 @@ Connected through the app (Application Settings → Test connection) and with a 
 ## Hardware results
 
 _None yet. The printer has not been connected._
+
+## Admin settings lock (2026-10-26)
+
+- Application Settings (AX connection) needs the admin password. It locks again when the page is left or the app restarts.
+- The initial admin password was given by the business and is not written in this repository. Only its PBKDF2 hash is stored (`services/admin_auth.py`, then `config.json` → `admin.password_hash` after a change).
+- **Change the admin password after installation** (Application Settings → Change admin password).
+- After 5 wrong attempts, the unlock is blocked for 30 seconds.
+- This is an operator gate, not a security boundary: a Windows user can still edit or delete `config.json`. If `admin.password_hash` is removed, the initial password works again. Real data protection is the read-only SQL login.
