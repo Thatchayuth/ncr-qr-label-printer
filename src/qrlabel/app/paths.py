@@ -31,3 +31,8 @@ def log_dir() -> Path:
 
 def mock_output_dir() -> Path:
     return app_data_dir() / "mock_prints"
+
+
+def resource_path(name: str) -> Path:
+    """File shipped with the app (works from source and from the PyInstaller build)."""
+    return Path(__file__).resolve().parents[1] / "resources" / name

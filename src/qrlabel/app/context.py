@@ -34,6 +34,7 @@ class AppContext:
     def __init__(self) -> None:
         self.version = __version__
         self.config_service = ConfigurationService(paths.config_path())
+        self.first_run = not paths.config_path().exists()  # no settings saved yet -> show setup wizard
         self.config: dict[str, Any] = self.config_service.load()
         self.db = Database(paths.database_path())
         self.profiles = SqliteProfileRepository(self.db)

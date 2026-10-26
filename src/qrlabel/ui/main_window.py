@@ -4,7 +4,7 @@ from __future__ import annotations
 import getpass
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QIcon
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..app.context import AppContext
+from ..app.paths import resource_path
 from .admin_gate import AdminGate
 from .icons import icon, pixmap
 from .pages.designer_page import DesignerPage
@@ -37,7 +38,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ctx = ctx
         self.setWindowTitle(f"NCR QR Label Printer {ctx.version}")
-        self.setWindowIcon(icon("qr", "#2563EB", size=32))
+        self.setWindowIcon(QIcon(str(resource_path("app.ico"))))
         self.resize(1440, 900)
         self.setMinimumSize(1180, 700)
 
@@ -179,6 +180,14 @@ class MainWindow(QMainWindow):
             if self.pages[index][0] == name:
                 self.nav.setCurrentRow(row)
                 return
+
+    def refresh_after_setup(self) -> None:
+        """Re-read settings changed by the first-run wizard."""
+        for _, page in self.pages:
+            content = getattr(page, "content", page)
+            if hasattr(content, "load"):
+                content.load()
+        self._settings_changed()
 
     def _settings_changed(self) -> None:
         if self.ctx.using_mock_data:
