@@ -6,6 +6,7 @@ import logging
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QButtonGroup,
     QComboBox,
     QFormLayout,
@@ -337,6 +338,18 @@ class FirstRunWizard(QWizard):
         self.setStyleSheet("QWizard, QWizardPage { background: #FFFFFF; }")
         for page in (WelcomePage(ctx), DatabasePage(ctx), PrinterPage(ctx), DonePage(ctx)):
             self.addPage(page)
+        self.currentIdChanged.connect(lambda _: self._hide_aero_back_button())
+
+    def _hide_aero_back_button(self) -> None:
+        """QWizard starts in Aero style on Windows and leaves its round back-arrow button
+        (top-left) visible after switching to Modern style. The normal Back button is used instead."""
+        for b in self.findChildren(QAbstractButton):
+            if type(b) is QAbstractButton and not b.text():
+                b.hide()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._hide_aero_back_button()
 
     def accept(self) -> None:
         try:
