@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _MIGRATIONS: dict[int, str] = {
     1: """
@@ -63,6 +63,12 @@ _MIGRATIONS: dict[int, str] = {
         status TEXT NOT NULL,
         message TEXT NOT NULL DEFAULT ''
     );
+    """,
+    # v2: keep the formatted label values of each job so it can be reprinted identically
+    2: """
+    ALTER TABLE print_jobs ADD COLUMN record_json TEXT NOT NULL DEFAULT '';
+    CREATE INDEX ix_print_jobs_parent ON print_jobs(parent_job_id);
+    CREATE INDEX ix_print_jobs_document ON print_jobs(document_ref);
     """,
 }
 

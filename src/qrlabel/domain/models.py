@@ -183,6 +183,7 @@ class PrintJob:
     error_message: str = ""
     created_at: str = ""
     updated_at: str = ""
+    record_json: str = ""  # formatted label values used for this job (for identical reprints)
 
 
 @dataclass

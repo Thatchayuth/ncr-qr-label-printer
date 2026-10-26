@@ -39,7 +39,9 @@ class AppContext:
         self.templates = SqliteTemplateRepository(self.db)
         self.jobs = SqlitePrintJobRepository(self.db)
         self.payloads = QrPayloadBuilder()
-        self.print_service = PrintService(self.jobs, __version__, payload_builder=self.payloads)
+        self.print_service = PrintService(
+            self.jobs, __version__, payload_builder=self.payloads, profiles=self.profiles, templates=self.templates
+        )
         self._seed()
 
     def _seed(self) -> None:
@@ -64,6 +66,15 @@ class AppContext:
         return SqlServerDataSource(
             self.config["database"], lambda: self.config_service.get_password(self.config), approved
         )
+
+    @staticmethod
+    def queue_adapter_for(job):
+        """Adapter that can inspect the Windows queue a past job was sent to (None for TCP / sample printer)."""
+        if job.adapter == "spooler":
+            return WindowsSpoolerAdapter(job.printer_name)
+        if job.adapter == "shared":
+            return WindowsSharedPrinterAdapter(job.printer_name)
+        return None
 
     def printer_adapter(self):
         p = self.config["printer"]

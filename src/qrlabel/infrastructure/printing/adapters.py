@@ -11,12 +11,54 @@ from __future__ import annotations
 import logging
 import socket
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from ...domain.errors import PrinterError
 from ...domain.models import PrintStatus, SendResult
 
 log = logging.getLogger(__name__)
+
+# Windows JOB_STATUS_* flags
+_JOB_FLAGS = [
+    (0x0002, "Error", True), (0x0020, "Printer offline", True), (0x0040, "Out of paper", True),
+    (0x0400, "Needs attention at the printer", True), (0x0200, "Blocked", True), (0x0001, "Paused", True),
+    (0x0004, "Being deleted", False), (0x0008, "Spooling", False), (0x0010, "Printing", False),
+    (0x0800, "Restarting", False), (0x0080, "Printed", False), (0x1000, "Complete", False), (0x0100, "Deleted", False),
+]
+# Windows PRINTER_STATUS_* flags that mean the operator must act
+_PRINTER_PROBLEMS = [
+    (0x00000001, "printer paused"), (0x00000002, "printer error"), (0x00000008, "paper jam"),
+    (0x00000010, "out of paper"), (0x00000040, "paper problem"), (0x00000080, "printer offline"),
+    (0x00001000, "printer not available"), (0x00100000, "needs attention"), (0x00400000, "cover open"),
+]
+_PRINTER_ATTRIBUTE_WORK_OFFLINE = 0x400
+
+
+@dataclass
+class QueueState:
+    in_queue: bool
+    text: str
+    problem: bool = False
+
+    @property
+    def can_cancel(self) -> bool:
+        return self.in_queue
+
+
+def describe_job_status(flags: int, status_text: str | None = None) -> tuple[str, bool]:
+    names = [name for bit, name, _ in _JOB_FLAGS if flags & bit]
+    problem = any(flags & bit for bit, _, bad in _JOB_FLAGS if bad)
+    if status_text:
+        names.insert(0, status_text)
+    return (", ".join(names) or "Waiting in queue"), problem
+
+
+def describe_printer_status(status: int, attributes: int = 0) -> list[str]:
+    problems = [name for bit, name in _PRINTER_PROBLEMS if status & bit]
+    if attributes & _PRINTER_ATTRIBUTE_WORK_OFFLINE:
+        problems.append("'Use printer offline' is switched on in Windows")
+    return problems
 
 
 def list_windows_printers() -> list[str]:
@@ -90,12 +132,48 @@ class WindowsSpoolerAdapter:
         finally:
             win32print.ClosePrinter(h)
 
+    def queue_state(self, spool_job_id: int | None) -> QueueState:
+        """Where is this job now? Note: many USB label drivers report printer errors only partly."""
+        import win32print
+
+        try:
+            h = win32print.OpenPrinter(self.target)
+        except Exception as e:
+            raise PrinterError(f"Cannot open printer '{self.target}'.", detail=str(e)) from None
+        try:
+            info = win32print.GetPrinter(h, 2)
+            printer_problems = describe_printer_status(info.get("Status", 0), info.get("Attributes", 0))
+            job = None
+            if spool_job_id:
+                try:
+                    job = win32print.GetJob(h, int(spool_job_id), 1)
+                except Exception:  # not found: already sent to the device, or removed
+                    job = None
+        finally:
+            win32print.ClosePrinter(h)
+        suffix = f" Printer: {', '.join(printer_problems)}." if printer_problems else ""
+        if job is None:
+            return QueueState(
+                False,
+                "No longer in the Windows print queue (sent to the printer, or removed). Check the sticker." + suffix,
+                bool(printer_problems),
+            )
+        text, problem = describe_job_status(job.get("Status", 0), job.get("pStatus"))
+        pos = job.get("Position")
+        where = f" (position {pos} in queue)" if pos else ""
+        return QueueState(True, f"Still in the Windows print queue{where}: {text}." + suffix, problem or bool(printer_problems))
+
     def cancel(self, spool_job_id: int) -> None:
         import win32print
 
-        h = win32print.OpenPrinter(self.target)
         try:
-            win32print.SetJob(h, spool_job_id, 0, None, win32print.JOB_CONTROL_DELETE)
+            h = win32print.OpenPrinter(self.target)
+        except Exception as e:
+            raise PrinterError(f"Cannot open printer '{self.target}'.", detail=str(e)) from None
+        try:
+            win32print.SetJob(h, int(spool_job_id), 0, None, win32print.JOB_CONTROL_DELETE)
+        except Exception as e:
+            raise PrinterError("Windows could not cancel the job. It may already have been sent to the printer.", detail=str(e)) from None
         finally:
             win32print.ClosePrinter(h)
 

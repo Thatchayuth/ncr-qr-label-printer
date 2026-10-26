@@ -99,17 +99,22 @@ Engine: payload builder (plain / delimited / JSON, prefix/suffix, null rules, by
 
 ---
 
-## Phase 4 — TSC Printer Adapters and Print History 🟡 (adapters + history written, hardware ⛔)
+## Phase 4 — TSC Printer Adapters and Print History 🟡 (software done, hardware ⛔)
 
 Already implemented: Windows spooler (USB), shared printer (`\\HOST\Share`), RAW TCP 9100, sample printer; status model Pending → Submitting → SpoolerAccepted / SubmittedToDevice / Failed / UnknownDelivery / Cancelled; stop-after-failure; duplicate correlation IDs refused.
 
-| # | Task |
-|---|---|
-| 4.1 | Hardware tests of USB and shared printing (tests/hardware) |
-| 4.2 | Queue monitoring: read spooler job state after submit; cancel pending spool jobs |
-| 4.3 | Reprint from history with mandatory reason → new job linked by `parent_job_id` |
-| 4.4 | Operator confirmation flow for `UnknownDelivery` |
-| 4.5 | Continuous-print test (e.g. 200 labels), density/speed tuning |
+| # | Task | Status |
+|---|---|---|
+| 4.1 | Hardware tests of USB and shared printing (tests/hardware) | ⛔ printer not connected |
+| 4.2 | Queue monitoring: "Check queue" reads the Windows job and printer status flags; "Cancel in queue" removes a waiting job and records Cancelled (refused if the job already left the queue) | ✅ (checked against a real Windows queue; not yet with TE200) |
+| 4.3 | Reprint from history: reason required, same data snapshot + original profile/template versions, new job linked by `parent_job_id`, stops after a failed/unknown job, multi-select | ✅ |
+| 4.4 | Operator marks: UnknownDelivery / SpoolerAccepted → ConfirmedPrinted or Failed, with note and user in the timeline | ✅ |
+| 4.5 | History page: date/status/text filters, "needs attention" filter and highlight, details panel with timeline and reprint links, CSV export (UTF-8 BOM for Thai in Excel) | ✅ |
+| 4.6 | Continuous-print test (e.g. 200 labels), density/speed tuning | ⛔ printer not connected |
+
+**Tests (executed 2026-10-26):** 97 automated tests (adds DB migration v1→v2, reprint, operator marks, queue cancel, filters, status texts). Offscreen UI run: 3 prints → reprint 2 with reason → mark unknown as printed → filter → CSV export.
+
+Note: jobs printed before this version have no data snapshot and cannot be reprinted from history (search and print them again).
 
 **Acceptance:** USB and shared printing work; no history row claims success that did not happen; reprints are linked.
 

@@ -72,7 +72,12 @@ _JOB_COLUMNS = [
     "id", "correlation_id", "parent_job_id", "document_ref", "printer_name", "adapter", "copies",
     "profile_id", "profile_version", "template_id", "template_version", "status", "username",
     "app_version", "reason", "spool_job_id", "error_code", "error_message", "created_at", "updated_at",
+    "record_json",
 ]
+
+
+def _utc_iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
 class SqlitePrintJobRepository:
@@ -120,8 +125,48 @@ class SqlitePrintJobRepository:
         return self._to_job(row) if row else None
 
     def list_recent(self, limit: int = 500) -> list[PrintJob]:
+        return self.list_filtered(limit=limit)
+
+    def list_filtered(
+        self,
+        *,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        statuses: list[PrintStatus] | None = None,
+        text: str = "",
+        limit: int = 1000,
+    ) -> list[PrintJob]:
+        """Newest first. start/end are timezone-aware (end exclusive); text matches document, printer, user or reason."""
+        where, params = [], []
+        if start:
+            where.append("created_at >= ?")
+            params.append(_utc_iso(start))
+        if end:
+            where.append("created_at < ?")
+            params.append(_utc_iso(end))
+        if statuses:
+            where.append(f"status IN ({', '.join('?' * len(statuses))})")
+            params.extend(s.value for s in statuses)
+        if text.strip():
+            like = "%" + text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where.append(
+                "(document_ref LIKE ? ESCAPE '\\' OR printer_name LIKE ? ESCAPE '\\' "
+                "OR username LIKE ? ESCAPE '\\' OR reason LIKE ? ESCAPE '\\')"
+            )
+            params.extend([like] * 4)
+        sql = "SELECT * FROM print_jobs"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(int(limit))
         with self.db.connect() as c:
-            rows = c.execute("SELECT * FROM print_jobs ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+            rows = c.execute(sql, params).fetchall()
+        return [self._to_job(r) for r in rows]
+
+    def children(self, job_id: str) -> list[PrintJob]:
+        """Reprints made from this job."""
+        with self.db.connect() as c:
+            rows = c.execute("SELECT * FROM print_jobs WHERE parent_job_id = ? ORDER BY created_at", (job_id,)).fetchall()
         return [self._to_job(r) for r in rows]
 
     def events(self, job_id: str) -> list[tuple[str, str, str]]:
