@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased — Phase 4
+## 0.9.0 — 2026-10-26 (release candidate for UAT)
+
+- Windows installer (Inno Setup): per-user or all-users, shortcuts, keeps data on upgrade, asks before deleting data on uninstall.
+- First-run setup wizard (admin password, AX connection test, printer + test label).
+- App icon, exe version info, only one copy can run at a time.
+- Admin password gate for Application Settings.
+- Label Designer: Layers panel.
+- Guides: installation, user guide, troubleshooting (Thai), UAT checklist.
+
+## Phase 4
 
 - Print History rebuilt: filters (date, status, text), needs-attention highlight, details with timeline and reprint links, CSV export.
 - Reprint with required reason, identical data and original template/profile versions, linked to the original job.

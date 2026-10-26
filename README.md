@@ -2,7 +2,9 @@
 
 Windows desktop app that searches **Dynamics AX 4.0** (`AssetTable`, read-only) and prints **QR + AssetId** stickers on a **TSC TE200** (USB or Windows shared printer).
 
-Status: **development (Phase 0 / Phase 1)**. See [PHASES.md](PHASES.md) and [docs/phase0-discovery.md](docs/phase0-discovery.md).
+Status: **0.9.0 release candidate, waiting for UAT and printer tests**. See [PHASES.md](PHASES.md).
+
+Guides (Thai): [Install](docs/INSTALL.md) · [User guide](docs/USER_GUIDE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [UAT checklist](docs/UAT.md)
 
 ## Developer setup
 
@@ -17,7 +19,7 @@ py -3.12 -m venv .venv
 
 The app starts in **SAMPLE DATA** mode with a **sample printer** that writes `.prn` files, so no database or printer is needed. Switch to AX in *Application Settings* and to the TE200 in *Printer Settings*.
 
-Build an exe folder (no Python needed on the target PC):
+Build the installer (no Python needed on the target PC; needs Inno Setup 6 on the build PC). Output: `dist\installer\NCR-QR-Label-Printer-Setup-<version>.exe`
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1
