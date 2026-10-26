@@ -267,7 +267,13 @@ class LabelView(QGraphicsView):
         super().wheelEvent(event)
 
     def keyPressEvent(self, event) -> None:
-        step = 0.1 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 0.5
+        mods = event.modifiers()
+        if mods & Qt.KeyboardModifier.ShiftModifier:
+            step = 0.1
+        elif mods & Qt.KeyboardModifier.ControlModifier:
+            step = 1.0
+        else:
+            step = 0.5
         moves = {
             Qt.Key.Key_Left: (-step, 0), Qt.Key.Key_Right: (step, 0),
             Qt.Key.Key_Up: (0, -step), Qt.Key.Key_Down: (0, step),

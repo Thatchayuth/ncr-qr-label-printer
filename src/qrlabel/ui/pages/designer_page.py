@@ -5,6 +5,7 @@ import copy
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -68,6 +69,15 @@ class DesignerPage(QWidget):
         self.ecc = "M"
         self.snap_step = 0.5
         self._loading = False
+        self._clipboard: list[LabelElement] = []
+        self._saved_snapshot: LabelTemplate | None = None
+        self.undo_stack: list[LabelTemplate] = []
+        self.redo_stack: list[LabelTemplate] = []
+        self._snapshot: LabelTemplate | None = None
+        self._commit_timer = QTimer(self)
+        self._commit_timer.setSingleShot(True)
+        self._commit_timer.setInterval(350)
+        self._commit_timer.timeout.connect(self._commit_snapshot)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 28, 32, 28)
@@ -93,6 +103,7 @@ class DesignerPage(QWidget):
         sl.addStretch(1)
         body.addWidget(side)
 
+        self._install_shortcuts()
         self.reload()
 
     # ================================================================ build UI
@@ -120,6 +131,9 @@ class DesignerPage(QWidget):
         self.save_btn.setIcon(icon("check", "#FFFFFF", size=16))
         for b in (self.new_btn, self.dup_btn, self.import_btn, self.export_btn, self.revert_btn, self.save_btn):
             row.addWidget(b)
+        self.new_btn.setToolTip("New template (Ctrl+N)")
+        self.dup_btn.setToolTip("Copy this whole template")
+        self.save_btn.setToolTip("Save as a new version (Ctrl+S)")
         card.body.addLayout(row)
         self.banner = Banner()
         card.body.addWidget(self.banner)
@@ -141,11 +155,11 @@ class DesignerPage(QWidget):
         add_lbl.setObjectName("FieldLabel")
         tools.addWidget(add_lbl)
         for text, ic, tip, kind in [
-            ("Field", "table", "Text from a data field (e.g. Asset ID)", "field"),
-            ("Text", "layout", "Fixed text", "text"),
-            ("QR", "qr", "QR code (content from QR Configuration)", "qr"),
-            ("Box", "layout", "Rectangle", "rect"),
-            ("Line", "minus", "Horizontal line", "line"),
+            ("Field", "table", "Text from a data field, e.g. Asset ID (Alt+1)", "field"),
+            ("Text", "layout", "Fixed text (Alt+2)", "text"),
+            ("QR", "qr", "QR code - content from QR Configuration (Alt+3)", "qr"),
+            ("Box", "layout", "Rectangle (Alt+4)", "rect"),
+            ("Line", "minus", "Horizontal line (Alt+5)", "line"),
         ]:
             b = _tool_button(text, ic, tip)
             b.clicked.connect(lambda _=False, k=kind: self._add_element(k))
@@ -192,9 +206,15 @@ class DesignerPage(QWidget):
         for w in (self.grid_check, self.snap_combo, zoom_out, self.zoom_label, zoom_in, fit):
             bottom.addWidget(w)
         card.body.addLayout(bottom)
-        hint = QLabel("Drag to move · drag the corner square to resize · arrow keys nudge 0.5 mm (Shift = 0.1 mm) · Ctrl + wheel to zoom")
+        hint_row = QHBoxLayout()
+        hint = QLabel("Drag to move · corner square resizes · arrows nudge · Ctrl+Z undo · Ctrl+D duplicate · Ctrl+S save")
         hint.setObjectName("Muted")
-        card.body.addWidget(hint)
+        keys_btn = QPushButton("Shortcuts (F1)")
+        keys_btn.setObjectName("Ghost")
+        keys_btn.clicked.connect(lambda: self._show_shortcuts())
+        hint_row.addWidget(hint, 1)
+        hint_row.addWidget(keys_btn)
+        card.body.addLayout(hint_row)
 
         self.delete_btn.clicked.connect(self._delete_selected)
         self.align_combo.activated.connect(self._align)
@@ -376,8 +396,16 @@ class DesignerPage(QWidget):
     def _load(self, t: LabelTemplate, saved_version: int) -> None:
         self.template = copy.deepcopy(t)
         self.saved_version = saved_version
+        self._saved_snapshot = copy.deepcopy(t) if saved_version else None
+        self._reset_history()
         self._pick_profile()
         self._build_values()
+        self._fill_label_form(t)
+        self._rebuild_scene()
+        self._set_dirty(False)
+        QTimer.singleShot(0, self.view.fit)
+
+    def _fill_label_form(self, t: LabelTemplate) -> None:
         self._loading = True
         self.l_name.setText(t.name)
         self.l_w.setValue(t.width_mm)
@@ -391,9 +419,130 @@ class DesignerPage(QWidget):
         self.l_qr_mode.setCurrentIndex(max(0, self.l_qr_mode.findData(t.qr_mode)))
         self.l_text_mode.setCurrentIndex(max(0, self.l_text_mode.findData(t.text_mode)))
         self._loading = False
+
+    # ========================================================= undo / redo
+
+    def _reset_history(self) -> None:
+        self._commit_timer.stop()
+        self.undo_stack: list[LabelTemplate] = []
+        self.redo_stack: list[LabelTemplate] = []
+        self._snapshot = copy.deepcopy(self.template)
+
+    def _commit_snapshot(self) -> None:
+        """Record one undo step once a burst of edits (e.g. a drag) has settled."""
+        self._commit_timer.stop()
+        if self.template is None or self.template == self._snapshot:
+            return
+        self.undo_stack.append(self._snapshot)
+        del self.undo_stack[:-100]
+        self.redo_stack.clear()
+        self._snapshot = copy.deepcopy(self.template)
+
+    def _undo(self) -> None:
+        self._commit_snapshot()
+        if not self.undo_stack:
+            return
+        self.redo_stack.append(copy.deepcopy(self.template))
+        self._restore(self.undo_stack.pop())
+
+    def _redo(self) -> None:
+        self._commit_snapshot()
+        if not self.redo_stack:
+            return
+        self.undo_stack.append(copy.deepcopy(self.template))
+        self._restore(self.redo_stack.pop())
+
+    def _restore(self, t: LabelTemplate) -> None:
+        self.template = copy.deepcopy(t)
+        self._snapshot = copy.deepcopy(t)
+        self._fill_label_form(t)
         self._rebuild_scene()
-        self._set_dirty(False)
-        QTimer.singleShot(0, self.view.fit)
+        self._set_dirty(self._saved_snapshot is None or self.template != self._saved_snapshot)
+
+    # ===================================================== clipboard / select
+
+    def _copy(self) -> None:
+        sel = [i.el for i in self.items if i.isSelected()]
+        if sel:
+            self._clipboard = copy.deepcopy(sel)
+
+    def _paste(self) -> None:
+        if not self._clipboard or not self.template:
+            return
+        self.scene.clearSelection()
+        t = self.template
+        for src in self._clipboard:
+            el = copy.deepcopy(src)
+            fw, fh = footprint(el)
+            el.x_mm = round(min(el.x_mm + 1.0, max(0.0, t.width_mm - fw)), 2)
+            el.y_mm = round(min(el.y_mm + 1.0, max(0.0, t.height_mm - fh)), 2)
+            t.elements.append(el)
+            self._add_item(el).setSelected(True)
+        self._clipboard = [copy.deepcopy(i.el) for i in self.items if i.isSelected()]  # next paste steps again
+        self._changed()
+
+    def _duplicate_element(self) -> None:
+        self._copy()
+        self._paste()
+
+    def _select_all(self) -> None:
+        for item in self.items:
+            item.setSelected(True)
+
+    def _toggle_grid(self) -> None:
+        self.grid_check.setChecked(not self.grid_check.isChecked())
+
+    def _align_to(self, index: int) -> None:
+        self.align_combo.setCurrentIndex(index)
+        self._align()
+
+    def _install_shortcuts(self) -> None:
+        page_keys = [
+            ("Ctrl+S", "Save template", self._save),
+            ("Ctrl+N", "New template", self._new),
+            ("Ctrl+Z", "Undo", self._undo),
+            ("Ctrl+Y", "Redo", self._redo),
+            ("Ctrl+Shift+Z", "Redo", self._redo),
+            ("Ctrl+C", "Copy selected element(s)", self._copy),
+            ("Ctrl+V", "Paste element(s)", self._paste),
+            ("Ctrl+D", "Duplicate selected element(s)", self._duplicate_element),
+            ("Ctrl+A", "Select all elements", self._select_all),
+            ("Esc", "Clear selection", self.scene.clearSelection),
+            ("Alt+1", "Add Field", lambda: self._add_element("field")),
+            ("Alt+2", "Add Text", lambda: self._add_element("text")),
+            ("Alt+3", "Add QR", lambda: self._add_element("qr")),
+            ("Alt+4", "Add Box", lambda: self._add_element("rect")),
+            ("Alt+5", "Add Line", lambda: self._add_element("line")),
+            ("Alt+H", "Center horizontally", lambda: self._align_to(1)),
+            ("Alt+V", "Center vertically", lambda: self._align_to(2)),
+            ("Ctrl+0", "Fit label to window", self.view.fit),
+            ("Ctrl+=", "Zoom in", lambda: self.view.set_zoom(self.view.zoom * 1.25)),
+            ("Ctrl++", "Zoom in", lambda: self.view.set_zoom(self.view.zoom * 1.25)),
+            ("Ctrl+-", "Zoom out", lambda: self.view.set_zoom(self.view.zoom / 1.25)),
+            ("Ctrl+G", "Show / hide grid", self._toggle_grid),
+            ("F1", "Show keyboard shortcuts", self._show_shortcuts),
+        ]
+        self._shortcuts = []
+        for keys, _, fn in page_keys:
+            sc = QShortcut(QKeySequence(keys), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(fn)
+            self._shortcuts.append(sc)
+        self.shortcut_help = [(k, d) for k, d, _ in page_keys if k not in ("Ctrl+Shift+Z", "Ctrl++")] + [
+            ("Delete", "Delete selected element(s)"),
+            ("Arrow keys", "Move 0.5 mm  (Shift = 0.1 mm, Ctrl = 1 mm)"),
+            ("Ctrl + mouse wheel", "Zoom"),
+        ]
+
+    def _show_shortcuts(self) -> None:
+        rows = "".join(
+            f"<tr><td style='padding:3px 14px 3px 0'><b>{k}</b></td><td>{d}</td></tr>" for k, d in self.shortcut_help
+        )
+        box = QMessageBox(self)
+        box.setWindowTitle("Label Designer shortcuts")
+        box.setTextFormat(Qt.TextFormat.RichText)
+        box.setText(f"<table>{rows}</table>")
+        box.exec()
 
     def _pick_profile(self) -> None:
         profiles = self.ctx.profiles.list_latest()
@@ -424,8 +573,10 @@ class DesignerPage(QWidget):
         return self.template, self.values, self.qr_text, self.ecc, self.snap_step
 
     def _rebuild_scene(self) -> None:
+        self.items = []  # forget old items before clear() fires selectionChanged
+        self.scene.blockSignals(True)
         self.scene.clear()
-        self.items = []
+        self.scene.blockSignals(False)
         self.scene.set_template(self.template)
         for el in self.template.elements:
             self._add_item(el)
@@ -512,6 +663,9 @@ class DesignerPage(QWidget):
     def _save(self) -> None:
         if not self.template:
             return
+        if not self.dirty:
+            self.banner.show_message("No changes to save.", "info")
+            return
         problems = validate_template(self.template)
         if problems:
             self.banner.show_message("Fix these before saving:\n• " + "\n• ".join(problems), "error")
@@ -523,6 +677,8 @@ class DesignerPage(QWidget):
             return
         self.template.version = saved.version
         self.saved_version = saved.version
+        self._saved_snapshot = copy.deepcopy(self.template)
+        self._commit_snapshot()
         self._fill_combo(select=saved.id)
         self._set_dirty(False)
         self.banner.show_message(f"Saved '{saved.name}' as version {saved.version}. New prints use this version.", "success")
@@ -641,7 +797,7 @@ class DesignerPage(QWidget):
         self._loading = False
 
     def _on_element_edit(self, *_):
-        if self._loading:
+        if self._loading or not self.isVisible():
             return
         item = self.selected_item()
         if not item:
@@ -666,8 +822,14 @@ class DesignerPage(QWidget):
     # ================================================================ label
 
     def _on_label_edit(self, *_):
-        if self._loading or not self.template:
+        if self._loading or not self.template or not self.isVisible():
+            return  # also ignores editingFinished fired while the window closes
+        try:
+            self._apply_label_form()
+        except RuntimeError:  # widgets already destroyed during shutdown
             return
+
+    def _apply_label_form(self) -> None:
         t = self.template
         t.name = self.l_name.text().strip() or t.name
         t.width_mm, t.height_mm = self.l_w.value(), self.l_h.value()
@@ -699,6 +861,7 @@ class DesignerPage(QWidget):
     def _changed(self) -> None:
         self._set_dirty(True)
         self._validate()
+        self._commit_timer.start()
 
     def _validate(self) -> None:
         if not self.template:
