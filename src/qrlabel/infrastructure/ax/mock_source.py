@@ -47,19 +47,35 @@ class MockDataSource:
     def test_connection(self) -> str:
         return f"Mock data source ({len(self.rows)} sample rows, company '{MOCK_COMPANY}')"
 
+    def list_sources(self) -> list[tuple[str, str, str]]:
+        return [("dbo", "AssetBook", "TABLE"), ("dbo", "AssetTable", "TABLE")]
+
+    def forget_columns(self) -> None:
+        pass
+
     def list_columns(self, source: str, schema: str = "dbo") -> list[tuple[str, str]]:
         if source.upper() not in self.approved:
             raise ValidationError(f"Source '{source}' is not approved.")
         prefix = "" if source.upper() == "ASSETTABLE" else f"{source.upper()}."
         sample = self.rows[0] if self.rows else {}
         cols = [k[len(prefix):] for k in sample if (k.startswith(prefix) if prefix else "." not in k)]
-        return [(c, "nvarchar") for c in cols]
+
+        def sql_type(col: str) -> str:
+            value = sample.get(prefix + col)
+            if hasattr(value, "year"):
+                return "datetime"
+            return "numeric" if type(value).__name__ == "Decimal" else "nvarchar"
+
+        extra = [("ASSETID", "nvarchar"), ("DATAAREAID", "nvarchar"), ("BOOKID", "nvarchar")] if prefix == "ASSETBOOK." else []
+        return extra + [(c, sql_type(c)) for c in cols]
 
     def _value(self, row: dict[str, Any], profile: DataProfile, fd: FieldDef) -> Any:
         def get(table: str, col: str) -> Any:
-            t = table.upper()
-            key = col.upper() if not t or t == profile.source.upper() else f"{t}.{col.upper()}"
-            return row.get(key)
+            t = (table or profile.source).upper()
+            if t == "ASSETTABLE":
+                return row.get(col.upper())
+            value = row.get(f"{t}.{col.upper()}")
+            return value if value is not None else row.get(col.upper())  # ASSETID / DATAAREAID are shared
 
         value = get(fd.table, fd.source)
         if fd.fallback and is_null(value):

@@ -104,6 +104,18 @@ class SqlServerDataSource:
             row = conn.cursor().execute("SELECT @@SERVERNAME, DB_NAME(), SERVERPROPERTY('ProductVersion')").fetchone()
         return f"Connected to {row[0]} / {row[1]} (SQL Server {row[2]})"
 
+    def list_sources(self) -> list[tuple[str, str, str]]:
+        """All tables and views the login can see: (schema, name, 'TABLE' | 'VIEW'). Metadata only."""
+        with self._connect() as conn:
+            rows = conn.cursor().execute(
+                "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES "
+                "ORDER BY TABLE_NAME"
+            ).fetchall()
+        return [(r[0], r[1], "VIEW" if r[2] == "VIEW" else "TABLE") for r in rows]
+
+    def forget_columns(self) -> None:
+        self._columns_cache.clear()
+
     def list_columns(self, source: str, schema: str = "dbo") -> list[tuple[str, str]]:
         if source.upper() not in {s.upper() for s in self.approved_sources}:
             raise ValidationError(f"Source '{source}' is not in the approved source list.")

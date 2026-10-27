@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Data Profiles editor (admin password required):
+  - Create, duplicate, import, export and version data profiles.
+  - Choose any AX table or DBA view (searchable list of tables and views; the choice is added to the approved sources).
+  - Add fields from the discovered columns, with header, type, format, search, date range, show, required and fallback settings; reorder fields.
+  - Add related tables (one row per main row, link columns, "pick first by").
+  - Test query shows the first 20 rows and the generated SQL.
+  - Saving is refused when columns are missing, ntext columns are searched or sorted, or the QR uses removed fields.
+- Search & Print shows newly created profiles without restarting.
+
 - Printer choice is now a drop-down of real printers only. PDF, XPS, OneNote and Fax are hidden, label printers (TSC, Zebra, …) are listed first, and other printers show a warning. The same drop-down is used in Printer Settings and the setup wizard.
 - Supports TSC TE210 (203 dpi, same as TE200; confirmed from the Windows driver).
 

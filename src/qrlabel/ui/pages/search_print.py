@@ -294,14 +294,18 @@ class SearchPrintPage(QWidget):
     def refresh_definitions(self) -> None:
         """Pick up newly saved profile/template versions without clearing the search or results."""
         pid, tid = self.profile_combo.currentData(), self.template_combo.currentData()
+        old = self.current_profile()
         self.profiles = self.ctx.profiles.list_latest()
         self.templates = self.ctx.templates.list_latest()
         self.profile_combo.blockSignals(True)
-        for i in range(self.profile_combo.count()):
-            p = next((x for x in self.profiles if x.id == self.profile_combo.itemData(i)), None)
-            if p:
-                self.profile_combo.setItemText(i, f"{p.name}  (v{p.version})")
+        self.profile_combo.clear()
+        for p in self.profiles:  # new profiles appear, renamed ones update
+            self.profile_combo.addItem(icon("table", "#64748B"), f"{p.name}  (v{p.version})", p.id)
+        self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(pid)))
         self.profile_combo.blockSignals(False)
+        new = self.current_profile()
+        if old is None or new is None or old.id != new.id or old.fields != new.fields:
+            self._on_profile_changed()  # search boxes and columns changed: rebuild them
         self.template_combo.blockSignals(True)
         self.template_combo.clear()
         for t in self.templates:

@@ -27,6 +27,7 @@ from .pages.history_page import HistoryPage
 from .pages.qr_config_page import QrConfigPage
 from .pages.info_pages import DiagnosticsPage, ReadOnlyJsonPage
 from .pages.printer_page import PrinterPage
+from .pages.profiles_page import ProfilesPage
 from .pages.search_print import SearchPrintPage
 from .pages.settings_page import SettingsPage
 
@@ -60,7 +61,10 @@ class MainWindow(QMainWindow):
                 ("Print History", "history", HistoryPage(ctx)),
             ]),
             ("LABEL SETUP", [
-                ("Data Profiles", "table", ReadOnlyJsonPage(ctx, "Data Profiles", "Profile editor arrives in Phase 2. Current profiles:", "profiles")),
+                ("Data Profiles", "table", AdminGate(
+                    ctx, ProfilesPage(ctx), "Data Profiles",
+                    "Which AX table or view to read, which columns to show, search and print.",
+                )),
                 ("QR Configuration", "qr", QrConfigPage(ctx)),
                 ("Label Designer", "layout", DesignerPage(ctx)),
             ]),

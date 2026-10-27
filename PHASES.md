@@ -66,7 +66,7 @@ Confirmed business facts (2026-10-26):
 
 ---
 
-## Phase 2 — AX Database Access and Dynamic Data Profiles ⬜
+## Phase 2 — AX Database Access and Dynamic Data Profiles ✅ (editor added 2026-10-27)
 
 **Depends on:** Phase 0.2 run against the real database (column list of `AssetTable`).
 
