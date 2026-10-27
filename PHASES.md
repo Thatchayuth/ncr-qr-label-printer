@@ -141,3 +141,19 @@ Note: jobs printed before this version have no data snapshot and cannot be repri
 **Not yet executed:** interactive uninstall prompt, "install for all users" mode, upgrade over a running copy, clean-PC install, anything with the TE200.
 
 **Acceptance:** Setup.exe installs/uninstalls cleanly on a PC without Python; all Masterplan §16 criteria pass.
+
+---
+
+# Extension plan (agreed 2026-10-27)
+
+Facts from AX (read-only checks): InventJournalTrans has 2,008,396 rows in db1. Voucher and ItemId searches take 60–450 ms, including "contains". InventDim and InventTable are stored in the virtual company VIR, which covers DAT, DB1, DB2 and DB3. JournalError links by REFTABLEID = 154 + JournalId + LineNum, and only 60 lines have errors. INFOLOG is binary, so only "has error" can be shown.
+
+| Phase | Goal | Estimate | Depends on |
+|---|---|---|---|
+| 6 ✅ | Bind label templates to data profiles: allowed list + default; Search & Print shows only allowed labels; designer "Use with profiles"; warnings for fields a template needs | done 2026-10-27 | — |
+| 7 | Search options per field (exact / starts with / contains), "at least one search value" option, field order | 0.5–1 day | — |
+| 8 | Inventory Journal profile: related-table company = same / virtual (VIRTUALDATAAREALIST) / none, fixed-value conditions (REFTABLEID = 154), "has rows" fields; InventJournalTrans + InventDim + InventTable + JournalError; QR + template | 1.5–2 days | 6, 7, answers on label content |
+| 9 | Installer choices: role (operator / administrator) and modules (Asset / Inventory journal); hide menus and profiles; admin can change later | 1–1.5 days | 8 |
+| 10 | TE210 hardware tests, UAT, ship the fixed-QR template, release 1.0.0 | ~1 day + team testing | all (hardware tests can start now) |
+
+Out of scope: per-user login or permissions (Masterplan §15 "User Management Server"), decoding JournalError INFOLOG, and writing anything back to AX.

@@ -43,3 +43,11 @@ def test_existing_install_keeps_its_templates(tmp_path, monkeypatch):
     again = AppContext()  # second start: nothing re-seeded or overwritten
     assert sorted(t.id for t in again.templates.list_latest()) == sorted([BUNDLED_ID, "my-own"])
     assert again.templates.get(BUNDLED_ID).version == 1
+
+
+def test_new_install_binds_bundled_label(tmp_path, monkeypatch):
+    monkeypatch.setenv("QRLABEL_DATA_DIR", str(tmp_path))
+    from qrlabel.app.context import AppContext
+
+    p = AppContext().profiles.get("asset")
+    assert p.template_ids == [BUNDLED_ID] and p.template_id == BUNDLED_ID

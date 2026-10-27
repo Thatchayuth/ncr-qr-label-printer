@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -35,6 +37,7 @@ from ...domain.layout import mm_to_dots
 from ...rendering.images import SUPPORTED as SUPPORTED_IMAGES
 from ...rendering.raster import qr_byte_capacity, qr_matrix
 from ...rendering.images import load_image_file
+from ...services.profile_rules import template_issues
 from ...services.template_io import duplicate_template, export_template, import_template
 from ..designer.canvas import ElementItem, LabelScene, LabelView, footprint
 from ..icons import icon
@@ -130,6 +133,11 @@ class DesignerPage(QWidget):
         row.addWidget(lbl)
         row.addWidget(self.template_combo)
         row.addWidget(self.state_chip)
+        self.used_by = QPushButton("")
+        self.used_by.setObjectName("Ghost")
+        self.used_by.setToolTip("Data profiles that may use this label. Click to change.")
+        self.used_by.clicked.connect(self._edit_profiles)
+        row.addWidget(self.used_by)
         row.addStretch(1)
         self.new_btn = QPushButton("New")
         self.dup_btn = QPushButton("Duplicate")
@@ -833,6 +841,7 @@ class DesignerPage(QWidget):
         self.state_chip.style().unpolish(self.state_chip)
         self.state_chip.style().polish(self.state_chip)
         self.revert_btn.setEnabled(dirty and self.saved_version > 0)
+        self._update_used_by()
 
     def _new(self) -> None:
         if not self._confirm_discard():
@@ -888,6 +897,87 @@ class DesignerPage(QWidget):
         if self.template and self.saved_version:
             self._open(self.template.id)
             self.banner.clear_message()
+
+    # ======================================================= profile binding
+
+    def _profiles_using(self) -> list[DataProfile]:
+        if not self.template:
+            return []
+        return [p for p in self.ctx.profiles.list_latest() if p.allows_template(self.template.id)]
+
+    def _update_used_by(self) -> None:
+        if not self.template:
+            return
+        if not self.saved_version:
+            self.used_by.setText("Save first, then choose profiles")
+            self.used_by.setEnabled(False)
+            return
+        names = [p.name for p in self._profiles_using()]
+        self.used_by.setEnabled(True)
+        self.used_by.setText(
+            ("Used by: " + ", ".join(names) if names else "Not used by any profile") + "   ·   Use with profiles..."
+        )
+        warnings = [i for p in self._profiles_using() for i in template_issues(self.template, p)]
+        self.used_by.setStyleSheet("QPushButton { color: #B45309; }" if warnings else "")
+        self.used_by.setToolTip("\n".join(warnings) or "Data profiles that may use this label. Click to change.")
+
+    def _edit_profiles(self) -> None:
+        """Tick the data profiles that may use this label (saves a new version of each changed profile)."""
+        t = self.template
+        if not t or not self.saved_version:
+            return
+        profiles = self.ctx.profiles.list_latest()
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Use this label with...")
+        dlg.setMinimumWidth(460)
+        lay = QVBoxLayout(dlg)
+        info = QLabel(f"Data profiles that may print <b>{t.name}</b>:")
+        info.setWordWrap(True)
+        lay.addWidget(info)
+        lst = QListWidget()
+        for p in profiles:
+            it = QListWidgetItem(icon("table", "#64748B"), f"{p.name}  (v{p.version})")
+            it.setData(Qt.ItemDataRole.UserRole, p.id)
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(Qt.CheckState.Checked if p.allows_template(t.id) else Qt.CheckState.Unchecked)
+            issues = template_issues(t, p)
+            if issues:
+                it.setToolTip("\n".join(issues))
+                it.setForeground(QColor("#B45309"))
+            lst.addItem(it)
+        lay.addWidget(lst)
+        note = QLabel("Orange = this label prints fields the profile does not have (hover for details).")
+        note.setObjectName("Muted")
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        all_ids = [x.id for x in self.ctx.templates.list_latest()]
+        changed = []
+        for i, p in enumerate(profiles):
+            want = lst.item(i).checkState() == Qt.CheckState.Checked
+            if want == p.allows_template(t.id):
+                continue
+            p2 = copy.deepcopy(p)
+            ids = list(p2.template_ids) or list(all_ids)  # older profile = all labels: make the list explicit
+            if want and t.id not in ids:
+                ids.append(t.id)
+            if not want:
+                ids = [x for x in ids if x != t.id]
+                if p2.template_id == t.id:
+                    p2.template_id = ids[0] if ids else ""
+            if want and not p2.template_id:
+                p2.template_id = t.id
+            p2.template_ids = ids
+            self.ctx.profiles.save(p2)
+            changed.append(p2.name)
+        self._update_used_by()
+        if changed:
+            self.banner.show_message(f"Updated profile(s): {', '.join(changed)} (saved as new versions).", "success")
 
     def _save(self) -> None:
         if not self.template:

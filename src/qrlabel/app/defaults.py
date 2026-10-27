@@ -95,6 +95,7 @@ def default_asset_profile() -> DataProfile:
         row_limit=200,
         qr=default_asset_qr(),
         template_id=DEFAULT_TEMPLATE_ID,
+        template_ids=[DEFAULT_TEMPLATE_ID],
     )
 
 

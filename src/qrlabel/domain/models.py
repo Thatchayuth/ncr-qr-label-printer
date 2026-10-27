@@ -104,8 +104,12 @@ class DataProfile:
     order_by: list[str] = field(default_factory=list)
     row_limit: int = 200
     qr: QrConfig = field(default_factory=QrConfig)
-    template_id: str = ""
+    template_id: str = ""  # default label
+    template_ids: list[str] = field(default_factory=list)  # labels allowed with this profile; empty = all (older profiles)
     version: int = 1
+
+    def allows_template(self, template_id: str) -> bool:
+        return not self.template_ids or template_id in self.template_ids
 
     def get_field(self, column: str) -> FieldDef | None:
         col = column.upper()

@@ -62,6 +62,7 @@ class AppContext:
             profile = default_asset_profile()
             if default_template_id:
                 profile.template_id = default_template_id
+                profile.template_ids = [default_template_id]
             self.profiles.save(profile)
             log.info("Seeded default Asset data profile (template %s)", profile.template_id)
 

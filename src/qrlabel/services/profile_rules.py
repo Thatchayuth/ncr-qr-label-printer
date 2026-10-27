@@ -152,4 +152,38 @@ def validate_profile(p: DataProfile, columns: ColumnMap | None = None, template_
         issues.append(f"QR uses fields that are no longer in the profile: {', '.join(missing_qr)}.")
     if template_ids is not None and p.template_id and p.template_id not in template_ids:
         issues.append("The default label template no longer exists.")
+    if p.template_ids:
+        if p.template_id and p.template_id not in p.template_ids:
+            issues.append("The default label must be one of the labels ticked for this profile.")
+        if template_ids is not None:
+            gone = [t for t in p.template_ids if t not in template_ids]
+            if gone:
+                issues.append(f"{len(gone)} ticked label(s) no longer exist. Untick them.")
+    return issues
+
+
+_PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def template_fields(template) -> set[str]:
+    """Data fields a label template prints (dynamic text and {COLUMN} placeholders), upper case."""
+    used: set[str] = set()
+    for el in template.elements:
+        if el.kind != "text":
+            continue
+        if el.field:
+            used.add(el.field.upper())
+        used.update(m.upper() for m in _PLACEHOLDER_RE.findall(el.text or ""))
+    return used
+
+
+def template_issues(template, profile: DataProfile) -> list[str]:
+    """Warnings when a label needs data the profile does not provide (printing still works: blank text)."""
+    keys = {f.column.upper() for f in profile.fields}
+    missing = sorted(template_fields(template) - keys)
+    issues = []
+    if missing:
+        issues.append(f"'{template.name}' prints field(s) not in '{profile.name}': {', '.join(missing)} (would print empty).")
+    if any(e.kind == "qr" for e in template.elements) and not profile.qr.fields:
+        issues.append(f"'{template.name}' has a QR code but '{profile.name}' has no QR fields.")
     return issues

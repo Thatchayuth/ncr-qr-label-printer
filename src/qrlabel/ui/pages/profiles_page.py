@@ -38,7 +38,7 @@ from ...domain.models import DataProfile, FieldDef, LookupDef, QrConfig, new_id
 from ...infrastructure.ax.mock_source import MOCK_COMPANY
 from ...services.formatting import format_value
 from ...services.profile_io import duplicate_profile, export_profile, import_profile
-from ...services.profile_rules import UNSORTABLE_TYPES, ColumnMap, new_field, validate_profile
+from ...services.profile_rules import UNSORTABLE_TYPES, ColumnMap, new_field, template_issues, validate_profile
 from ...services.query_builder import IDENT_RE, build_select, split_order
 from ..icons import icon
 from ..widgets import Banner, Card, chip, labeled, page_header
@@ -330,6 +330,7 @@ class ProfilesPage(QWidget):
         right = QVBoxLayout(right_w)
         right.setContentsMargins(0, 0, 0, 0)
         right.setSpacing(18)
+        right.addWidget(self._build_labels_card())
         right.addWidget(self._build_lookups_card())
         right.addWidget(self._build_test_card())
         right.addStretch(1)
@@ -394,21 +395,39 @@ class ProfilesPage(QWidget):
         sort_row.addWidget(self.sort_dir)
         self.row_limit = QSpinBox()
         self.row_limit.setRange(1, 5000)
-        self.template = QComboBox()
         f.addRow("Name", self.name)
         f.addRow("Table / view", src_row)
         f.addRow("Schema", self.schema)
         f.addRow("Company column", self.company_col)
         f.addRow("Sort results by", sort_row)
         f.addRow("Max rows", self.row_limit)
-        f.addRow("Default label", self.template)
         card.body.addLayout(f)
         self.browse_btn.clicked.connect(self._browse_source)
         self.name.textEdited.connect(self._changed)
         self.schema.editingFinished.connect(self._reload_columns)
-        for c in (self.company_col, self.sort_col, self.sort_dir, self.template):
+        for c in (self.company_col, self.sort_col, self.sort_dir):
             c.currentIndexChanged.connect(self._changed)
         self.row_limit.valueChanged.connect(self._changed)
+        return card
+
+    def _build_labels_card(self) -> Card:
+        card = Card("Labels")
+        hint = QLabel("Tick the label templates operators may use with this profile. "
+                      "The default label is chosen first on Search & Print.")
+        hint.setObjectName("Muted")
+        hint.setWordWrap(True)
+        card.body.addWidget(hint)
+        self.labels = QListWidget()
+        self.labels.setMaximumHeight(120)
+        card.body.addWidget(self.labels)
+        self.template = QComboBox()
+        card.body.addWidget(labeled("Default label", self.template))
+        self.label_warnings = QLabel("")
+        self.label_warnings.setWordWrap(True)
+        self.label_warnings.setStyleSheet("color: #B45309;")
+        card.body.addWidget(self.label_warnings)
+        self.labels.itemChanged.connect(self._on_labels_ticked)
+        self.template.currentIndexChanged.connect(self._changed)
         return card
 
     def _build_fields_card(self) -> Card:
@@ -521,6 +540,11 @@ class ProfilesPage(QWidget):
         self._fill_combo(current)
         if self.profile is None:
             self._open(self.profile_combo.currentData())
+        elif self.saved is not None and not self._dirty():
+            latest = self.ctx.profiles.get(self.profile.id)  # e.g. labels bound from the Label Designer
+            if latest is not None and latest.version != self.saved.version:
+                self._load(latest, saved=True)
+                self._fill_combo(latest.id)
         self._fill_templates()
 
     def _fill_combo(self, select: str | None) -> None:
@@ -534,14 +558,54 @@ class ProfilesPage(QWidget):
         self.profile_combo.blockSignals(False)
 
     def _fill_templates(self) -> None:
-        keep = self.template.currentData() or (self.profile.template_id if self.profile else "")
+        """Tick list of all label templates (checked = allowed) + default chooser."""
+        self.all_templates = self.ctx.templates.list_latest()
+        p = self.profile
+        self.labels.blockSignals(True)
+        self.labels.clear()
+        for t in self.all_templates:
+            it = QListWidgetItem(icon("qr", "#64748B"), f"{t.name}  (v{t.version})")
+            it.setData(Qt.ItemDataRole.UserRole, t.id)
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+            allowed = p is None or p.allows_template(t.id)
+            it.setCheckState(Qt.CheckState.Checked if allowed else Qt.CheckState.Unchecked)
+            self.labels.addItem(it)
+        self.labels.blockSignals(False)
+        self._fill_default_label(p.template_id if p else "")
+
+    def _ticked_templates(self) -> list[str]:
+        return [
+            self.labels.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(self.labels.count())
+            if self.labels.item(i).checkState() == Qt.CheckState.Checked
+        ]
+
+    def _fill_default_label(self, keep: str) -> None:
+        ticked = set(self._ticked_templates())
         self.template.blockSignals(True)
         self.template.clear()
         self.template.addItem("(none)", "")
-        for t in self.ctx.templates.list_latest():
-            self.template.addItem(f"{t.name}  (v{t.version})", t.id)
-        self.template.setCurrentIndex(max(0, self.template.findData(keep)))
+        for t in getattr(self, "all_templates", []):
+            if t.id in ticked:
+                self.template.addItem(f"{t.name}  (v{t.version})", t.id)
+        idx = self.template.findData(keep)
+        if idx < 0 and len(ticked) >= 1:
+            idx = 1  # first ticked label becomes the default
+        self.template.setCurrentIndex(max(0, idx))
         self.template.blockSignals(False)
+
+    def _on_labels_ticked(self, _item=None) -> None:
+        self._fill_default_label(self.template.currentData() or "")
+        self._changed()
+
+    def _show_label_warnings(self) -> None:
+        if not self.profile:
+            return
+        p = self.collect()
+        by_id = {t.id: t for t in getattr(self, "all_templates", [])}
+        issues = [i for tid in self._ticked_templates() if tid in by_id for i in template_issues(by_id[tid], p)]
+        self.label_warnings.setText("\n".join(f"⚠ {i}" for i in issues))
+        self.label_warnings.setVisible(bool(issues))
 
     def _on_profile_chosen(self, _i: int) -> None:
         pid = self.profile_combo.currentData()
@@ -567,7 +631,6 @@ class ProfilesPage(QWidget):
         self.schema.setText(p.schema)
         self.row_limit.setValue(int(p.row_limit))
         self._fill_templates()
-        self.template.setCurrentIndex(max(0, self.template.findData(p.template_id)))
         self._fill_lookups()
         self._fill_fields_table()
         self._loading = False
@@ -795,6 +858,12 @@ class ProfilesPage(QWidget):
         p.order_by = [f"{sort} {self.sort_dir.currentData()}" if self.sort_dir.currentData() == "DESC" else sort] if sort else []
         p.row_limit = self.row_limit.value()
         p.template_id = self.template.currentData() or ""
+        ticked = self._ticked_templates()
+        everything = [t.id for t in getattr(self, "all_templates", [])]
+        if not self.profile.template_ids and sorted(ticked) == sorted(everything):
+            p.template_ids = []  # older profile with every label ticked: keep "all labels"
+        else:
+            p.template_ids = ticked
         keys = {f.column.upper() for f in p.fields}
         p.qr.fields = [c for c in p.qr.fields if c.upper() in keys]
         if not p.qr.fields and p.fields:
@@ -820,6 +889,7 @@ class ProfilesPage(QWidget):
         self.state_chip.style().polish(self.state_chip)
         self.revert_btn.setEnabled(dirty and self.saved is not None)
         self.fields_chip.setText(f"{self.table.rowCount()} fields")
+        self._show_label_warnings()
 
     # --------------------------------------------------------------- actions
 
@@ -890,6 +960,10 @@ class ProfilesPage(QWidget):
         self.save_btn.setEnabled(True)
         self.columns = cols
         problems = self._check(p, cols)
+        latest = self.ctx.profiles.get(p.id)
+        if self.saved is not None and latest is not None and latest.version != self.saved.version:
+            problems.insert(0, f"This profile was changed somewhere else (now version {latest.version}). "
+                               "Press Revert to load it, then make your change again.")
         if problems:
             self.banner.show_message("Not saved - please fix:\n• " + "\n• ".join(problems), "error")
             return

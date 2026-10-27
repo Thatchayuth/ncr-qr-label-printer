@@ -61,7 +61,8 @@
 4. **Add fields...** → ติ๊กคอลัมน์ที่ต้องการ → แก้ **Header** (ชื่อที่แสดงบนหน้าจอ) เลือกได้ว่าคอลัมน์ไหนค้นหาได้ (Search) และคอลัมน์ไหนกรองช่วงวันที่ได้ (Date range)
 5. ถ้าต้องการข้อมูลจากตารางอื่นเพิ่ม → **Related tables → Add...** → เลือกตาราง → ระบุคอลัมน์ที่ใช้เชื่อม เช่น `ASSETID=ASSETID, DATAAREAID=DATAAREAID`
 6. **Run test query** → ตรวจข้อมูล 20 แถวแรก (คำสั่ง SQL ที่แสดงอยู่ใต้ตาราง ส่งให้ DBA ตรวจได้)
-7. **Save** → ไปตั้งค่าที่ **QR Configuration** ว่าจะใส่อะไรใน QR → เลือกแบบฉลากเริ่มต้นได้ที่ช่อง Default label
+7. การ์ด **Labels** → ติ๊กแบบฉลากที่โปรไฟล์นี้ใช้ได้ (ติ๊กได้หลายแบบ) แล้วเลือก **Default label** → **Save** → ไปตั้งค่าที่ **QR Configuration** ว่าจะใส่อะไรใน QR
+   - หรือเปิด Label Designer แล้วกดปุ่ม **Used by ... · Use with profiles...** เพื่อผูกแบบฉลากเข้ากับโปรไฟล์
 8. หน้า Search & Print → เลือกโปรไฟล์ใหม่จากช่อง **Data profile**
 
 > SQL login ที่โปรแกรมใช้ต้องมีสิทธิ์อ่านตารางหรือ View นั้นด้วย ถ้า Test แล้วขึ้น "The table or view does not exist, or the login cannot read it" ให้ขอ DBA เพิ่มสิทธิ์อ่าน

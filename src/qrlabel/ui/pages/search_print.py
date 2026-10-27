@@ -315,18 +315,29 @@ class SearchPrintPage(QWidget):
         self.profile_combo.setCurrentIndex(max(0, self.profile_combo.findData(ui.get("last_profile_id"))))
         self.profile_combo.blockSignals(False)
 
-        self.template_combo.blockSignals(True)
-        self.template_combo.clear()
-        for t in self.templates:
-            self.template_combo.addItem(icon("qr", "#64748B"), f"{t.name}  (v{t.version})", t.id)
-        self.template_combo.blockSignals(False)
-
         self.copies_spin.setValue(int(ui.get("copies", 1)))
         self._refresh_printer_label()
-        self._on_profile_changed()
-        last_t = self.template_combo.findData(ui.get("last_template_id"))
-        if last_t >= 0:
-            self.template_combo.setCurrentIndex(last_t)
+        self._on_profile_changed()  # also fills the label list for the profile
+        self._fill_templates(ui.get("last_template_id"))
+
+    def _fill_templates(self, prefer: str | None = None) -> None:
+        """Labels allowed for the current profile; keeps `prefer` if allowed, else the profile's default."""
+        profile = self.current_profile()
+        allowed = [t for t in self.templates if profile is None or profile.allows_template(t.id)]
+        self.template_combo.blockSignals(True)
+        self.template_combo.clear()
+        for t in allowed:
+            star = "  ★ default" if profile and t.id == profile.template_id else ""
+            self.template_combo.addItem(icon("qr", "#64748B"), f"{t.name}  (v{t.version}){star}", t.id)
+        idx = self.template_combo.findData(prefer) if prefer else -1
+        if idx < 0 and profile:
+            idx = self.template_combo.findData(profile.template_id)
+        self.template_combo.setCurrentIndex(max(0, idx))
+        self.template_combo.setEnabled(bool(allowed))
+        if not allowed:
+            self.template_combo.addItem("No label assigned to this profile (Data Profiles)", "")
+        self.template_combo.blockSignals(False)
+        self._update_preview()
 
     def refresh_definitions(self) -> None:
         """Pick up newly saved profile/template versions without clearing the search or results."""
@@ -343,14 +354,9 @@ class SearchPrintPage(QWidget):
         new = self.current_profile()
         if old is None or new is None or old.id != new.id or old.fields != new.fields:
             self._on_profile_changed()  # search boxes and columns changed: rebuild them
-        self.template_combo.blockSignals(True)
-        self.template_combo.clear()
-        for t in self.templates:
-            self.template_combo.addItem(icon("qr", "#64748B"), f"{t.name}  (v{t.version})", t.id)
-        self.template_combo.setCurrentIndex(max(0, self.template_combo.findData(tid)))
-        self.template_combo.blockSignals(False)
-        if self.profile_combo.findData(pid) >= 0:
-            self._update_preview()
+        if old is not None and new is not None and old.template_id != new.template_id:
+            tid = new.template_id  # the admin chose a new default label
+        self._fill_templates(tid)
 
     def _refresh_printer_label(self) -> None:
         try:
@@ -437,9 +443,7 @@ class SearchPrintPage(QWidget):
         for fd in profile.range_fields:
             self.criteria_grid.addWidget(labeled(fd.label, self._date_range_row(fd.column)), row, 0, 1, 2)
             row += 1
-        tidx = self.template_combo.findData(profile.template_id)
-        if tidx >= 0:
-            self.template_combo.setCurrentIndex(tidx)
+        self._fill_templates(profile.template_id)
         self._set_records([], searched=False)
 
     def _date_range_row(self, column: str) -> QWidget:
