@@ -37,7 +37,11 @@ def format_value(value: Any, fd: FieldDef | None = None) -> str:
         return value.strftime(pattern)
     if isinstance(value, (Decimal, float)) and not isinstance(value, bool):
         # fmt: "2" -> 2 decimals, ",2" -> 2 decimals with thousands separators (1,234.50)
-        fmt = fd.fmt if fd else ""
+        # "abs" in front prints the value without its minus sign (e.g. "abs" or "abs,2")
+        fmt = (fd.fmt if fd else "").strip()
+        if fmt.lower().startswith("abs"):
+            fmt = fmt[3:].strip()
+            value = abs(value)
         grouping = fmt.startswith(",")
         digits = fmt.lstrip(",")
         places = int(digits) if digits.isdigit() else None

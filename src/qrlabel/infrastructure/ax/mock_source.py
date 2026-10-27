@@ -13,7 +13,7 @@ from typing import Any
 from ...domain.errors import ValidationError
 from ...domain.models import DataProfile, FieldDef
 from ...services.formatting import is_null
-from ...services.query_builder import HARD_ROW_LIMIT, check_range_field, check_required_criteria, in_range, parse_text_filter, split_order, split_ref
+from ...services.query_builder import HARD_ROW_LIMIT, check_range_field, check_required_criteria, fixed_pairs, in_range, parse_text_filter, split_order, split_ref
 
 MOCK_COMPANY = "smp"
 _DEPARTMENTS = ["OADM", "FPRO_MOLD", "FPRO_LLH", "IT"]
@@ -95,6 +95,8 @@ class MockDataSource:
                 raise ValidationError("Company (DATAAREAID) is required for this profile.")
             rows = [r for r in rows if str(r.get(profile.dataarea_column.upper(), "")).lower() == company.strip().lower()]
         check_required_criteria(profile, criteria, ranges)
+        for col, value in fixed_pairs(profile.filters, "Fixed filter"):
+            rows = [r for r in rows if str(r.get(col.upper(), "")).strip().upper() == value.upper()]
         projected = [{f.column.upper(): self._value(r, profile, f) for f in profile.fields} for r in rows]
         for column, text in criteria.items():
             if (text or "").strip():

@@ -75,6 +75,8 @@ class LookupDef:
     schema: str = "dbo"
     join: list[list[str]] = field(default_factory=list)
     order_by: list[str] = field(default_factory=list)
+    # fixed values the related row must have: [[COLUMN, value]]; value "@VIRTUAL" = AX virtual company (DB1 -> VIR)
+    conditions: list[list[str]] = field(default_factory=list)
 
 
 @dataclass
@@ -103,6 +105,7 @@ class DataProfile:
     fields: list[FieldDef] = field(default_factory=list)
     lookups: list[LookupDef] = field(default_factory=list)
     order_by: list[str] = field(default_factory=list)
+    filters: list[list[str]] = field(default_factory=list)  # fixed main-table filter [[COLUMN, value]], e.g. JOURNALTYPE = 2
     row_limit: int = 200
     require_criteria: bool = False  # Search & Print needs at least one search value (for very large tables)
     qr: QrConfig = field(default_factory=QrConfig)

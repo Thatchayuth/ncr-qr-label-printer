@@ -120,3 +120,61 @@ def default_asset_template() -> LabelTemplate:
             ),
         ],
     )
+
+
+JOURNAL_PROFILE_ID = "inventjournal"
+JOURNAL_SOURCES = ["INVENTJOURNALTRANS", "INVENTDIM", "INVENTTABLE", "INVENTTABLEMODULE"]
+TRANSFER_JOURNAL_TYPE = "2"  # InventJournalType::Transfer (checked in AX: InventJournalTable type 2 = "Transfer journal")
+
+
+def default_journal_profile(template_ids: list[str] | None = None) -> DataProfile:
+    """Inventory transfer journal lines (STOCK label): one label per journal line.
+
+    InventDim, InventTable and InventTableModule are shared by all companies through the AX
+    virtual company (DB1 -> VIR), so they are joined with DATAAREAID = @VIRTUAL.
+    """
+    virtual = ["DATAAREAID", "@VIRTUAL"]
+    dim = "INVENTDIM"
+
+    def dim_field(column: str, alias: str, show: bool = True) -> FieldDef:
+        return FieldDef(column=column, alias=alias, table=dim, display=show)
+
+    template_ids = list(template_ids or [])
+    return DataProfile(
+        id=JOURNAL_PROFILE_ID,
+        name="Inventory transfer journal",
+        source="INVENTJOURNALTRANS",
+        schema="dbo",
+        dataarea_column="DATAAREAID",
+        fields=[
+            FieldDef(column="VOUCHER", alias="Voucher", searchable=True, search_mode="starts"),
+            FieldDef(column="ITEMID", alias="Item number", searchable=True, search_mode="starts", required=True),
+            FieldDef(column="ITEMNAME", alias="Item name", table="INVENTTABLE"),
+            FieldDef(column="QTY", alias="Qty", data_type="decimal", fmt="abs"),  # transfer lines are negative
+            FieldDef(column="UNITID", alias="Unit", table="INVENTTABLEMODULE"),
+            dim_field("INVENTSIZEID", "Grade"),
+            dim_field("INVENTBATCHID", "Batch No"),
+            FieldDef(column="NOTES", alias="Note"),
+            FieldDef(column="JOURNALID", alias="Journal", searchable=True, search_mode="starts"),
+            FieldDef(column="LINENUM", alias="Line", data_type="decimal"),
+            FieldDef(column="TRANSDATE", alias="Date", data_type="date", range_search=True, fmt="%d/%m/%Y"),
+            dim_field("INVENTLOCATIONID", "Warehouse"),
+            dim_field("WMSLOCATIONID", "Location"),
+            dim_field("INVENTSERIALID", "Serial", show=False),
+            dim_field("CONFIGID", "Configuration", show=False),
+            dim_field("INVENTCOLORID", "Colour", show=False),
+        ],
+        lookups=[
+            LookupDef(table=dim, join=[["INVENTDIMID", "INVENTDIMID"]], conditions=[virtual]),
+            LookupDef(table="INVENTTABLE", join=[["ITEMID", "ITEMID"]], conditions=[virtual]),
+            LookupDef(table="INVENTTABLEMODULE", join=[["ITEMID", "ITEMID"]],
+                      conditions=[["MODULETYPE", "0"], virtual]),  # 0 = inventory unit
+        ],
+        filters=[["JOURNALTYPE", TRANSFER_JOURNAL_TYPE]],
+        order_by=["TRANSDATE DESC", "JOURNALID DESC", "LINENUM"],  # Journal ids do not sort by time
+        row_limit=500,
+        require_criteria=True,  # about 1.3 million transfer lines in DB1
+        qr=QrConfig(format="plain", fields=["ITEMID"], null_policy="empty", error_correction="M", max_bytes=300),
+        template_id=template_ids[0] if template_ids else "",
+        template_ids=template_ids,
+    )

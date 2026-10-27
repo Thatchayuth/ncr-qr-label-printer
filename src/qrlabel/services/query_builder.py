@@ -110,6 +110,49 @@ def check_range_field(profile: DataProfile, column: str):
     return fd
 
 
+VIRTUAL_COMPANY = "@VIRTUAL"
+MAX_FIXED_VALUE = 60
+
+
+def fixed_pairs(pairs, label: str) -> list[tuple[str, str]]:
+    """[[COLUMN, value], ...] -> validated (COLUMN, value); value is always bound as a parameter."""
+    out = []
+    for pair in pairs or []:
+        if len(pair) != 2:
+            raise ValidationError(f"{label}: each fixed value needs a column and a value.")
+        col, value = str(pair[0]).strip(), str(pair[1]).strip()
+        quote_ident(col)
+        if not value or len(value) > MAX_FIXED_VALUE:
+            raise ValidationError(f"{label}: value for {col} must be 1-{MAX_FIXED_VALUE} characters.")
+        out.append((col, value))
+    return out
+
+
+def parse_pairs(text: str, label: str = "Fixed values") -> list[list[str]]:
+    """'MODULETYPE=0, DATAAREAID=@VIRTUAL' -> [["MODULETYPE", "0"], ["DATAAREAID", "@VIRTUAL"]]."""
+    out = []
+    for part in [p.strip() for p in (text or "").split(",") if p.strip()]:
+        if "=" not in part:
+            raise ValidationError(f"{label}: '{part}' must look like COLUMN=value.")
+        col, value = (x.strip() for x in part.split("=", 1))
+        out.append([col.upper(), value.upper() if value.upper() == VIRTUAL_COMPANY else value])
+    fixed_pairs(out, label)
+    return out
+
+
+def format_pairs(pairs) -> str:
+    return ", ".join(f"{c}={v}" for c, v in pairs or [])
+
+
+def uses_virtual_company(profile: DataProfile) -> bool:
+    return any(str(v).strip().upper() == VIRTUAL_COMPANY for lk in profile.lookups for _, v in (lk.conditions or []))
+
+
+VIRTUAL_COMPANY_SQL = (
+    "SELECT TOP 1 VIRTUALDATAAREA FROM [dbo].[VIRTUALDATAAREALIST] WHERE ID = ? ORDER BY VIRTUALDATAAREA"
+)
+
+
 def has_criteria(criteria: dict[str, str] | None, ranges: dict[str, DateRange] | None = None) -> bool:
     return any((t or "").strip() for t in (criteria or {}).values()) or any(
         a is not None or b is not None for a, b in (ranges or {}).values()
@@ -158,8 +201,13 @@ def build_select(
     approved_sources: Iterable[str],
     allowed_columns: dict[str, Iterable[str]] | Iterable[str] | None = None,
     ranges: dict[str, DateRange] | None = None,
+    virtual_company: str | None = None,
 ) -> tuple[str, list[Any]]:
-    """allowed_columns: {table: columns} discovered from the database (or just the main table's columns)."""
+    """allowed_columns: {table: columns} discovered from the database (or just the main table's columns).
+
+    virtual_company: AX virtual company of `company` (DB1 -> VIR), used for @VIRTUAL; the data source
+    looks it up first (see uses_virtual_company). None = the company itself.
+    """
     approved = {s.upper() for s in approved_sources}
     main = profile.source.upper()
     if main not in approved:
@@ -220,6 +268,12 @@ def build_select(
         where.append(f"{col_ref('', profile.dataarea_column)} = ?")
         params.append(company)
 
+    for col, value in fixed_pairs(profile.filters, "Fixed filter"):  # e.g. JOURNALTYPE = 2 (Transfer)
+        if value.upper() == VIRTUAL_COMPANY:
+            raise ValidationError(f"Fixed filter {col}: {VIRTUAL_COMPANY} can only be used for related tables.")
+        where.append(f"{col_ref('', col)} = ?")
+        params.append(value)
+
     for column, text in criteria.items():
         if not (text or "").strip():
             continue
@@ -274,6 +328,7 @@ def build_select(
         f"SELECT TOP ({limit}) {', '.join(select_cols)} "
         f"FROM {quote_ident(profile.schema)}.{quote_ident(profile.source)} AS a"
     )
+    join_params: list[Any] = []  # placeholders in OUTER APPLY come before the WHERE ones
     for i, lk in enumerate(profile.lookups, start=1):
         outer, inner, t = f"l{i}", f"x{i}", lk.table.upper()
         if not lk.join:
@@ -284,7 +339,19 @@ def build_select(
                 raise ValidationError(f"Column '{col}' does not exist in {lk.table}.")
             return f"{inner}.{quote_ident(col)}"
 
-        join_sql = " AND ".join(f"{inner_col(lc)} = {col_ref('', mc)}" for lc, mc in lk.join)
+        conds = [f"{inner_col(lc)} = {col_ref('', mc)}" for lc, mc in lk.join]
+        for col, value in fixed_pairs(lk.conditions, f"Related table {lk.table}"):
+            if value.upper() == VIRTUAL_COMPANY:
+                # AX virtual company of the row's company (DB1 -> VIR), or the company itself when it has none
+                if not profile.dataarea_column:
+                    raise ValidationError(f"Related table {lk.table}: {VIRTUAL_COMPANY} needs a company column.")
+                # Resolved before the query: a subquery here made SQL Server scan (38 s instead of 0.2 s).
+                conds.append(f"{inner_col(col)} = ?")
+                join_params.append((virtual_company or company).strip())
+            else:
+                conds.append(f"{inner_col(col)} = ?")
+                join_params.append(value)
+        join_sql = " AND ".join(conds)
         lk_order = [split_order(o) for o in lk.order_by] or [(lk.join[0][0], "ASC")]
         cols = sorted(used[t]) or [lk.join[0][0].upper()]
         sql += (
@@ -296,4 +363,4 @@ def build_select(
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += f" ORDER BY {order_sql}"
-    return sql, params
+    return sql, join_params + params

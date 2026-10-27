@@ -118,7 +118,7 @@ class SearchPrintPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 28, 32, 28)
         root.setSpacing(18)
-        root.addWidget(page_header("Search & Print", "Find assets in AX, select rows, check the label preview and print."))
+        root.addWidget(page_header("Search & Print", "Find records in AX, tick the rows, check the label preview and print."))
 
         body = QHBoxLayout()
         body.setSpacing(18)

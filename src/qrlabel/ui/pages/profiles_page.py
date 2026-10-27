@@ -40,7 +40,7 @@ from ...infrastructure.ax.mock_source import MOCK_COMPANY
 from ...services.formatting import format_value
 from ...services.profile_io import duplicate_profile, export_profile, import_profile
 from ...services.profile_rules import UNSORTABLE_TYPES, ColumnMap, new_field, template_issues, validate_profile
-from ...services.query_builder import IDENT_RE, SEARCH_MODES, build_select, split_order
+from ...services.query_builder import IDENT_RE, SEARCH_MODES, build_select, format_pairs, parse_pairs, split_order
 from ..icons import icon
 from ..widgets import Banner, Card, chip, labeled, page_header
 from ..workers import error_text, run_async
@@ -206,10 +206,16 @@ class LookupDialog(QDialog):
         self.join.setPlaceholderText("RELATED_COLUMN=MAIN_COLUMN, e.g. ASSETID=ASSETID, DATAAREAID=DATAAREAID")
         self.order = QLineEdit(", ".join(lk.order_by) if lk else "")
         self.order.setPlaceholderText("Which row wins if there are several, e.g. ACQUISITIONPRICE DESC, BOOKID")
+        self.conditions = QLineEdit(format_pairs(lk.conditions) if lk else "")
+        self.conditions.setPlaceholderText("Optional, e.g. MODULETYPE=0, DATAAREAID=@VIRTUAL")
+        self.conditions.setToolTip("Values the related row must have.\n"
+                                   "@VIRTUAL = the AX virtual company of the selected company (DB1 -> VIR),\n"
+                                   "for tables shared by all companies such as InventDim and InventTable.")
         f.addRow("Table / view", row)
         f.addRow("Schema", self.schema)
         f.addRow("Link columns", self.join)
         f.addRow("Pick first by", self.order)
+        f.addRow("Fixed values", self.conditions)
         lay.addLayout(f)
         self.cols_label = QLabel("")
         self.cols_label.setObjectName("Muted")
@@ -287,7 +293,15 @@ class LookupDialog(QDialog):
                 raise ValueError(f"Sort column {col} is not a column of {table}.")
             if self.columns.get(col) in UNSORTABLE_TYPES:
                 raise ValueError(f"Cannot sort by {col} ({self.columns[col]}).")
-        return LookupDef(table=table.upper(), schema=self.schema.text().strip() or "dbo", join=pairs, order_by=order)
+        try:
+            conditions = parse_pairs(self.conditions.text(), "Fixed values")
+        except Exception as e:
+            raise ValueError(str(e)) from e
+        for c, _ in conditions:
+            if self.columns and c not in self.columns:
+                raise ValueError(f"{c} is not a column of {table}.")
+        return LookupDef(table=table.upper(), schema=self.schema.text().strip() or "dbo", join=pairs,
+                         order_by=order, conditions=conditions)
 
 
 def _approve(ctx: AppContext, name: str) -> None:
@@ -397,6 +411,9 @@ class ProfilesPage(QWidget):
         sort_row.addWidget(self.sort_dir)
         self.row_limit = QSpinBox()
         self.row_limit.setRange(1, 5000)
+        self.filters = QLineEdit()
+        self.filters.setPlaceholderText("Optional, e.g. JOURNALTYPE=2 (only Transfer journals)")
+        self.filters.setToolTip("Rows must always have these values. Operators cannot change this.")
         self.require_criteria = QCheckBox("Search value required (operators cannot list everything)")
         self.require_criteria.setToolTip("Turn on for very large tables, e.g. journal lines.")
         f.addRow("Name", self.name)
@@ -405,6 +422,7 @@ class ProfilesPage(QWidget):
         f.addRow("Company column", self.company_col)
         f.addRow("Sort results by", sort_row)
         f.addRow("Max rows", self.row_limit)
+        f.addRow("Fixed filter", self.filters)
         f.addRow("", self.require_criteria)
         card.body.addLayout(f)
         self.browse_btn.clicked.connect(self._browse_source)
@@ -414,6 +432,7 @@ class ProfilesPage(QWidget):
             c.currentIndexChanged.connect(self._changed)
         self.row_limit.valueChanged.connect(self._changed)
         self.require_criteria.toggled.connect(self._changed)
+        self.filters.textEdited.connect(self._changed)
         return card
 
     def _build_labels_card(self) -> Card:
@@ -637,6 +656,7 @@ class ProfilesPage(QWidget):
         self.schema.setText(p.schema)
         self.row_limit.setValue(int(p.row_limit))
         self.require_criteria.setChecked(bool(p.require_criteria))
+        self.filters.setText(format_pairs(p.filters))
         self._fill_templates()
         self._fill_lookups()
         self._fill_fields_table()
@@ -809,7 +829,8 @@ class ProfilesPage(QWidget):
         for lk in self.profile.lookups if self.profile else []:
             join = ", ".join(f"{a}={b}" for a, b in lk.join)
             order = f"; first by {', '.join(lk.order_by)}" if lk.order_by else ""
-            self.lookups.addItem(QListWidgetItem(icon("table", "#64748B"), f"{lk.table}  on {join}{order}"))
+            fixed = f"; fixed {format_pairs(lk.conditions)}" if lk.conditions else ""
+            self.lookups.addItem(QListWidgetItem(icon("table", "#64748B"), f"{lk.table}  on {join}{fixed}{order}"))
 
     def _edit_lookup(self, index: int | None) -> None:
         if not self.profile or not self.profile.source:
@@ -880,8 +901,18 @@ class ProfilesPage(QWidget):
         p.dataarea_column = "" if comp in (None, NO_COMPANY) else comp
         sort = self.sort_col.currentData()
         p.order_by = [f"{sort} {self.sort_dir.currentData()}" if self.sort_dir.currentData() == "DESC" else sort] if sort else []
+        old = self.profile.order_by
+        try:
+            if sort and old and split_order(old[0]) == (sort.upper(), self.sort_dir.currentData()):
+                p.order_by = list(old)  # first sort unchanged: keep the extra sort columns (e.g. date, journal, line)
+        except Exception:
+            pass
         p.row_limit = self.row_limit.value()
         p.require_criteria = self.require_criteria.isChecked()
+        try:
+            p.filters = parse_pairs(self.filters.text(), "Fixed filter")
+        except Exception:
+            p.filters = [[x.strip() for x in part.split("=", 1)] for part in self.filters.text().split(",") if part.strip()]
         p.template_id = self.template.currentData() or ""
         ticked = self._ticked_templates()
         everything = [t.id for t in getattr(self, "all_templates", [])]

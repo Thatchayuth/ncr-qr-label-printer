@@ -12,7 +12,7 @@ from typing import Any
 
 from ...domain.errors import DataSourceError, ValidationError
 from ...domain.models import DataProfile
-from ...services.query_builder import build_select, quote_ident
+from ...services.query_builder import VIRTUAL_COMPANY_SQL, build_select, quote_ident, uses_virtual_company
 
 log = logging.getLogger(__name__)
 
@@ -158,11 +158,16 @@ class SqlServerDataSource:
         allowed = {profile.source: [c for c, _ in self.list_columns(profile.source, profile.schema)]}
         for lk in profile.lookups:
             allowed[lk.table] = [c for c, _ in self.list_columns(lk.table, lk.schema)]
-        sql, params = build_select(
-            profile, criteria, company, approved_sources=self.approved_sources, allowed_columns=allowed, ranges=ranges
-        )
         with self._connect() as conn:
             cur = conn.cursor()
+            virtual = None
+            if uses_virtual_company(profile):  # e.g. DB1 -> VIR for InventDim / InventTable
+                row = cur.execute(VIRTUAL_COMPANY_SQL, (company or "").strip()).fetchone()
+                virtual = row[0] if row else None
+            sql, params = build_select(
+                profile, criteria, company, approved_sources=self.approved_sources, allowed_columns=allowed,
+                ranges=ranges, virtual_company=virtual,
+            )
             cur.execute(sql, *params)
             names = [d[0].upper() for d in cur.description]
             rows = [dict(zip(names, r)) for r in cur.fetchall()]

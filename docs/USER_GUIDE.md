@@ -69,3 +69,16 @@
 8. หน้า Search & Print → เลือกโปรไฟล์ใหม่จากช่อง **Data profile**
 
 > SQL login ที่โปรแกรมใช้ต้องมีสิทธิ์อ่านตารางหรือ View นั้นด้วย ถ้า Test แล้วขึ้น "The table or view does not exist, or the login cannot read it" ให้ขอ DBA เพิ่มสิทธิ์อ่าน
+
+
+## พิมพ์สติกเกอร์ STOCK จาก Transfer journal
+
+1. หน้า Search & Print → ช่อง **Data profile** เลือก **Inventory transfer journal**
+2. กรอก **Voucher**, **Item number** หรือ **Journal** (ค้นหาแบบ "ขึ้นต้นด้วย") ต้องกรอกอย่างน้อยหนึ่งช่องหรือติ๊กช่วงวันที่ เพราะข้อมูลมีมากกว่า 1 ล้านรายการ
+3. ติ๊กรายการที่ต้องการ → พิมพ์ได้ 1 ดวงต่อ 1 รายการ (ถ้าต้องการมากกว่านั้นให้เพิ่ม Copies)
+4. ค่า Qty บนสติกเกอร์จะไม่มีเครื่องหมายลบ (ใน AX รายการโอนออกเป็นค่าติดลบ)
+
+สำหรับผู้ดูแล (Data Profiles):
+- **Fixed filter**: เงื่อนไขที่ผู้ใช้เปลี่ยนไม่ได้ เช่น `JOURNALTYPE=2` (เฉพาะ Transfer)
+- **Fixed values** ของ Related table: เช่น `MODULETYPE=0, DATAAREAID=@VIRTUAL` โดย `@VIRTUAL` หมายถึงบริษัทเสมือนของบริษัทที่เลือก (DB1 → VIR) ซึ่งเป็นที่เก็บ InventDim และ InventTable
+- Format `abs` = แสดงตัวเลขโดยไม่มีเครื่องหมายลบ

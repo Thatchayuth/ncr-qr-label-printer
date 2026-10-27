@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from ..domain.models import DataProfile, FieldDef
-from .query_builder import HARD_ROW_LIMIT, IDENT_RE, SEARCH_MODES, split_order, split_ref
+from .query_builder import HARD_ROW_LIMIT, IDENT_RE, SEARCH_MODES, VIRTUAL_COMPANY, fixed_pairs, split_order, split_ref
 
 # SQL Server types that cannot be compared with = / IN or used in ORDER BY
 UNSORTABLE_TYPES = {"ntext", "text", "image", "xml", "varbinary", "binary", "timestamp", "geography", "geometry"}
@@ -67,6 +67,15 @@ def validate_profile(p: DataProfile, columns: ColumnMap | None = None, template_
             return ""  # unknown: not checked
         return columns[t].get(column.upper())
 
+    try:
+        for c, v in fixed_pairs(p.filters, "Fixed filter"):
+            if col_type(main, c) is None:
+                issues.append(f"Fixed filter: column {c} does not exist in {p.source}.")
+            if v.upper() == VIRTUAL_COMPANY:
+                issues.append(f"Fixed filter: {VIRTUAL_COMPANY} can only be used for related tables.")
+    except Exception as e:
+        issues.append(str(e))
+
     for lk in p.lookups:
         t = lk.table.upper()
         if not IDENT_RE.match(lk.table or ""):
@@ -86,6 +95,14 @@ def validate_profile(p: DataProfile, columns: ColumnMap | None = None, template_
                 issues.append(f"Related table {lk.table}: column {lc} does not exist.")
             if col_type(main, mc) is None:
                 issues.append(f"Related table {lk.table}: column {mc} does not exist in {p.source}.")
+        try:
+            for c, v in fixed_pairs(lk.conditions, f"Related table {lk.table}"):
+                if col_type(t, c) is None:
+                    issues.append(f"Related table {lk.table}: fixed-value column {c} does not exist.")
+                if v.upper() == VIRTUAL_COMPANY and not p.dataarea_column:
+                    issues.append(f"Related table {lk.table}: {VIRTUAL_COMPANY} needs a company column on {p.source}.")
+        except Exception as e:
+            issues.append(str(e))
         for entry in lk.order_by:
             try:
                 c, _ = split_order(entry)

@@ -152,7 +152,7 @@ Facts from AX (read-only checks): InventJournalTrans has 2,008,396 rows in db1. 
 |---|---|---|---|
 | 6 ✅ | Bind label templates to data profiles: allowed list + default; Search & Print shows only allowed labels; designer "Use with profiles"; warnings for fields a template needs | done 2026-10-27 | — |
 | 7 ✅ | Search options per field (exact / starts with / contains), "at least one search value" option, field order (follows Move up/down) | done 2026-10-27 | — |
-| 8 | Inventory Journal profile: related-table company = same / virtual (VIRTUALDATAAREALIST) / none, fixed-value conditions (REFTABLEID = 154), "has rows" fields; InventJournalTrans + InventDim + InventTable + JournalError; QR + template | 1.5–2 days | 6, 7, answers on label content |
+| 8 ✅ | Inventory transfer journal profile: fixed filter (JOURNALTYPE = 2), related-table fixed values incl. @VIRTUAL company, `abs` number format; InventJournalTrans + InventDim + InventTable + InventTableModule; STOCK label bound | done 2026-10-27 (JournalError left out, as agreed) | 6, 7 |
 | 9 | Installer choices: role (operator / administrator) and modules (Asset / Inventory journal); hide menus and profiles; admin can change later | 1–1.5 days | 8 |
 | 10 | TE210 hardware tests, UAT, ship the fixed-QR template, release 1.0.0 | ~1 day + team testing | all (hardware tests can start now) |
 
@@ -177,3 +177,10 @@ Label (like the "STOCK" sample): `STOCK เกรด [InventSizeId]` / `รห�
 - Number of labels: one label per journal line. Copies = Qty is not possible because Qty can be decimal (e.g. 5.99 Kg). The user can still set copies when printing.
 - JournalError: not used for now.
 - Phase 9 addition: admin-only buttons and pages are hidden. An admin icon unlocks them after the password is entered.
+
+**Phase 8 results (executed on AX test DB, db1):**
+- Searches: Journal 0.02 s, Voucher 0.16 s, Item number 0.15–0.26 s (500 rows), DB2 also fine.
+- @VIRTUAL is looked up first (DB1 -> VIR) and sent as a value. A per-row subquery took 38 s, so it is not used.
+- Labels rendered from real lines match the STOCK sample (grade, item, |qty| + unit, name, batch, note). Test print to file: 2 lines -> 2 jobs, TSPL complete.
+- Results sorted newest first (TransDate, Journal, Line), because Journal ids do not sort by time.
+- On the dev PC the template "InventJournal Label" v6 has its boxes bound to fields. The third box on the Batch row was bound to Note, which is a guess.

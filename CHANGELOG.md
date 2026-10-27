@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Phase 8: Inventory transfer journal.
+  - New data profile "Inventory transfer journal" (InventJournalTrans, only Transfer journals) with item name, unit, grade, batch, note, warehouse/location and the other InventDim fields. Search by Voucher, Item number or Journal (starts with), and by date. One label per journal line.
+  - Data Profiles: **Fixed filter** on the main table (e.g. JOURNALTYPE=2) and **Fixed values** on related tables (e.g. MODULETYPE=0, DATAAREAID=@VIRTUAL). @VIRTUAL is the AX virtual company of the selected company (DB1 -> VIR).
+  - Number format `abs` prints a value without its minus sign (Qty of transfer lines is negative); `abs,2` also works.
+  - Fix: a profile sorted by several columns no longer shows "Unsaved changes" right after opening.
+
 - Phase 7: search options per field.
   - Data Profiles has a **Search by** column: Contains (default, as before), Starts with, or Exact. It applies to one typed value; lists (A, B) and ranges (A..B) are always exact.
   - Starts with and Exact are much faster on large tables (AX test: 0.01 s vs 0.11 s for Contains on AssetTable).
