@@ -457,9 +457,16 @@ class SearchPrintPage(QWidget):
                     items.append(item)
                 self.model.appendRow(items)
             header = self.table.horizontalHeader()
+            header.setStretchLastSection(True)
             for col, f in enumerate(fields):
-                mode = QHeaderView.ResizeMode.Stretch if f.column.upper() == "NAME" else QHeaderView.ResizeMode.ResizeToContents
-                header.setSectionResizeMode(col, mode)
+                if f.column.upper() == "NAME":  # long text: fixed width the user can drag; full text in tooltip
+                    header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+                    self.table.setColumnWidth(col, 260)
+                else:
+                    header.setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
+                if f.data_type in ("decimal", "int"):
+                    for row in range(self.model.rowCount()):
+                        self.model.item(row, col).setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.results_stack.setCurrentIndex(1 if rows else 0)
         if searched and not rows:
             self.empty_title.setText("No matching assets")

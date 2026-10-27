@@ -36,11 +36,17 @@ def format_value(value: Any, fd: FieldDef | None = None) -> str:
         pattern = (fd.fmt if fd and fd.fmt else "%Y-%m-%d")
         return value.strftime(pattern)
     if isinstance(value, (Decimal, float)) and not isinstance(value, bool):
-        places = int(fd.fmt) if fd and fd.fmt.isdigit() else None
+        # fmt: "2" -> 2 decimals, ",2" -> 2 decimals with thousands separators (1,234.50)
+        fmt = fd.fmt if fd else ""
+        grouping = fmt.startswith(",")
+        digits = fmt.lstrip(",")
+        places = int(digits) if digits.isdigit() else None
         try:
             d = Decimal(str(value))
             if places is not None:
-                return f"{d:.{places}f}"
+                return f"{d:{',' if grouping else ''}.{places}f}"
+            if grouping:
+                return f"{d.normalize():,f}"
             # drop trailing zeros, but never use exponent notation
             text = format(d.normalize(), "f")
             return text

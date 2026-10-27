@@ -110,11 +110,38 @@ def test_shared_path_validation():
 # ---------------------------------------------------------------- mock source
 
 def test_mock_source_search(profile):
-    src = MockDataSource(["AssetTable"])
+    src = MockDataSource(["AssetTable", "AssetBook"])
     rows = src.search(profile, {"ASSETID": "0002"}, "smp")
     assert [r["ASSETID"] for r in rows] == ["SAMPLE-FA-00002"] + [f"SAMPLE-FA-0002{i}" for i in range(10)]
-    assert set(rows[0]) == {"ASSETID", "NAME", "TECHINFO1", "TECHINFO2", "CREATEDDATE"}
+    assert set(rows[0]) == {"ASSETID", "NAME", "TECHINFO1", "PURCHID", "DIMENSION", "ACQUISITIONDATE",
+                            "ACQUISITIONPRICE", "CREATEDDATE"}
     assert src.search(profile, {}, "other") == []
+
+
+def test_mock_po_fallback_to_techinfo2(profile):
+    src = MockDataSource(["AssetTable", "AssetBook"])
+    rows = {r["ASSETID"]: r for r in src.search(profile, {}, "smp")}
+    assert rows["SAMPLE-FA-00001"]["PURCHID"] == "100001_018"  # from AssetBook
+    assert rows["SAMPLE-FA-00020"]["PURCHID"] == "900020_018"  # AssetBook empty -> TechInfo2
+    assert [r["ASSETID"] for r in src.search(profile, {"PURCHID": "900020"}, "smp")] == ["SAMPLE-FA-00020"]
+
+
+def test_config_v1_migrates_to_approve_assetbook(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text('{"config_version": 1, "approved_sources": ["AssetTable"]}', encoding="utf-8")
+    cfg = _fake_cs(p).load()
+    assert cfg["config_version"] == 2 and cfg["approved_sources"] == ["AssetTable", "AssetBook"]
+    assert (tmp_path / "config.json.bak-v1").exists()
+
+
+def test_price_format_with_thousands():
+    from decimal import Decimal
+
+    from qrlabel.domain.models import FieldDef
+    from qrlabel.services.formatting import format_value
+
+    assert format_value(Decimal("347285.320000000000"), FieldDef("P", fmt=",2")) == "347,285.32"
+    assert format_value(Decimal("0E-12"), FieldDef("P", fmt=",2")) == "0.00"
 
 
 # ----------------------------------------------------------------------- config
@@ -173,6 +200,6 @@ def test_real_dpapi_roundtrip():
 def test_mock_source_date_range(profile):
     from datetime import date
 
-    src = MockDataSource(["AssetTable"])
+    src = MockDataSource(["AssetTable", "AssetBook"])
     rows = src.search(profile, {}, "smp", {"CREATEDDATE": (date(2026, 1, 4), date(2026, 1, 10))})
     assert [r["ASSETID"] for r in rows] == ["SAMPLE-FA-00001", "SAMPLE-FA-00002", "SAMPLE-FA-00003"]

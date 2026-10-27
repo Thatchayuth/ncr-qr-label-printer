@@ -109,31 +109,82 @@ def in_range(value: Any, rng: DateRange) -> bool:
     return (start is None or d >= start) and (end is None or d <= end)
 
 
+def split_ref(ref: str) -> tuple[str, str]:
+    """'TABLE.COLUMN' -> (TABLE, COLUMN); 'COLUMN' -> ('', COLUMN) meaning the main source."""
+    parts = ref.split(".")
+    if len(parts) == 1:
+        return "", parts[0]
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    raise ValidationError(f"Invalid column reference: {ref!r}")
+
+
+def split_order(entry: str) -> tuple[str, str]:
+    parts = entry.split()
+    if len(parts) == 1:
+        return parts[0], "ASC"
+    if len(parts) == 2 and parts[1].upper() in ("ASC", "DESC"):
+        return parts[0], parts[1].upper()
+    raise ValidationError(f"Invalid sort entry: {entry!r}")
+
+
 def build_select(
     profile: DataProfile,
     criteria: dict[str, str],
     company: str,
     *,
     approved_sources: Iterable[str],
-    allowed_columns: Iterable[str] | None = None,
+    allowed_columns: dict[str, Iterable[str]] | Iterable[str] | None = None,
     ranges: dict[str, DateRange] | None = None,
 ) -> tuple[str, list[Any]]:
+    """allowed_columns: {table: columns} discovered from the database (or just the main table's columns)."""
     approved = {s.upper() for s in approved_sources}
-    if profile.source.upper() not in approved:
+    main = profile.source.upper()
+    if main not in approved:
         raise ValidationError(f"Source '{profile.source}' is not in the approved source list.")
 
-    allowed = {c.upper() for c in allowed_columns} if allowed_columns is not None else None
+    aliases = {main: "a"}
+    for i, lk in enumerate(profile.lookups, start=1):
+        t = lk.table.upper()
+        if t not in approved:
+            raise ValidationError(f"Related table '{lk.table}' is not in the approved source list.")
+        if t in aliases:
+            raise ValidationError(f"Table '{lk.table}' is used twice in the data profile.")
+        aliases[t] = f"l{i}"
 
-    def check_col(col: str) -> str:
+    if allowed_columns is None:
+        allowed = None
+    elif isinstance(allowed_columns, dict):
+        allowed = {k.upper(): {c.upper() for c in v} for k, v in allowed_columns.items()}
+    else:
+        allowed = {main: {c.upper() for c in allowed_columns}}
+
+    used: dict[str, set[str]] = {t: set() for t in aliases}  # columns each lookup must return
+
+    def col_ref(table: str, col: str) -> str:
+        t = (table or profile.source).upper()
+        if t not in aliases:
+            raise ValidationError(f"Table '{table}' is not part of this data profile.")
         q = quote_ident(col)
-        if allowed is not None and col.upper() not in allowed:
-            raise ValidationError(f"Column '{col}' does not exist in {profile.source}.")
-        return q
+        if allowed is not None and t in allowed and col.upper() not in allowed[t]:
+            raise ValidationError(f"Column '{col}' does not exist in {table or profile.source}.")
+        used[t].add(col.upper())
+        return f"{aliases[t]}.{q}"
+
+    def expr(fd) -> str:
+        base = col_ref(fd.table, fd.source)
+        if fd.fallback:
+            ft, fc = split_ref(fd.fallback)
+            return f"COALESCE(NULLIF({base}, ''), {col_ref(ft, fc)})"
+        return base
 
     if not profile.fields:
         raise ValidationError("Data profile has no fields.")
+    keys = [f.column.upper() for f in profile.fields]
+    if len(keys) != len(set(keys)):
+        raise ValidationError("Two fields in the data profile have the same name.")
 
-    select_cols = [check_col(f.column) for f in profile.fields]
+    select_cols = [f"{expr(f)} AS {quote_ident(f.column)}" for f in profile.fields]
     where: list[str] = []
     params: list[Any] = []
 
@@ -143,7 +194,7 @@ def build_select(
             raise ValidationError("Company (DATAAREAID) is required for this profile.")
         if len(company) > 8:
             raise ValidationError("Company (DATAAREAID) is too long.")
-        where.append(f"{check_col(profile.dataarea_column)} = ?")
+        where.append(f"{col_ref('', profile.dataarea_column)} = ?")
         params.append(company)
 
     for column, text in criteria.items():
@@ -153,7 +204,7 @@ def build_select(
         if fd is None or not fd.searchable:
             raise ValidationError(f"Field '{column}' is not searchable in this profile.")
         flt = parse_text_filter(text, fd.label)
-        q = check_col(fd.column)
+        q = expr(fd)
         if flt.contains is not None:
             where.append(f"{q} LIKE ? ESCAPE '\\'")
             params.append(f"%{escape_like(flt.contains)}%")
@@ -171,7 +222,7 @@ def build_select(
         if start is None and end is None:
             continue
         fd = check_range_field(profile, column)
-        q = check_col(fd.column)
+        q = expr(fd)
         if start and end and start > end:
             raise ValidationError(f"{fd.label}: 'From' date is after 'To' date.")
         if start:
@@ -181,8 +232,12 @@ def build_select(
             where.append(f"{q} < ?")
             params.append(datetime.combine(end + timedelta(days=1), time.min))
 
-    order_cols = profile.order_by or [profile.fields[0].column]
-    order_sql = ", ".join(check_col(c) for c in order_cols)
+    order_parts = []
+    for entry in profile.order_by or [profile.fields[0].column]:
+        col, direction = split_order(entry)
+        fd = profile.get_field(col)
+        order_parts.append(f"{expr(fd) if fd else col_ref('', col)} {direction}")
+    order_sql = ", ".join(order_parts)
 
     limit = int(profile.row_limit)
     if not 1 <= limit <= HARD_ROW_LIMIT:
@@ -190,8 +245,27 @@ def build_select(
 
     sql = (
         f"SELECT TOP ({limit}) {', '.join(select_cols)} "
-        f"FROM {quote_ident(profile.schema)}.{quote_ident(profile.source)}"
+        f"FROM {quote_ident(profile.schema)}.{quote_ident(profile.source)} AS a"
     )
+    for i, lk in enumerate(profile.lookups, start=1):
+        outer, inner, t = f"l{i}", f"x{i}", lk.table.upper()
+        if not lk.join:
+            raise ValidationError(f"Related table '{lk.table}' has no join columns.")
+
+        def inner_col(col: str, t=t, inner=inner) -> str:
+            if allowed is not None and t in allowed and col.upper() not in allowed[t]:
+                raise ValidationError(f"Column '{col}' does not exist in {lk.table}.")
+            return f"{inner}.{quote_ident(col)}"
+
+        join_sql = " AND ".join(f"{inner_col(lc)} = {col_ref('', mc)}" for lc, mc in lk.join)
+        lk_order = [split_order(o) for o in lk.order_by] or [(lk.join[0][0], "ASC")]
+        cols = sorted(used[t]) or [lk.join[0][0].upper()]
+        sql += (
+            f" OUTER APPLY (SELECT TOP 1 {', '.join(inner_col(c) for c in cols)}"
+            f" FROM {quote_ident(lk.schema)}.{quote_ident(lk.table)} AS {inner}"
+            f" WHERE {join_sql}"
+            f" ORDER BY {', '.join(f'{inner_col(c)} {d}' for c, d in lk_order)}) AS {outer}"
+        )
     if where:
         sql += " WHERE " + " AND ".join(where)
     sql += f" ORDER BY {order_sql}"

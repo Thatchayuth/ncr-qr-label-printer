@@ -22,7 +22,7 @@ from .security import dpapi
 
 log = logging.getLogger(__name__)
 
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "config_version": CONFIG_VERSION,
@@ -40,7 +40,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "query_timeout": 30,
         "company": "",
     },
-    "approved_sources": ["AssetTable"],
+    "approved_sources": ["AssetTable", "AssetBook"],
     "printer": {
         "adapter": "mock",  # mock | spooler | shared | tcp
         "printer_name": "",
@@ -104,8 +104,17 @@ SCHEMA: dict[str, Any] = {
     },
 }
 
+def _v1_to_v2(config: dict[str, Any]) -> dict[str, Any]:
+    """AssetBook (PO, department, acquisition data) is read together with AssetTable."""
+    sources = config.setdefault("approved_sources", ["AssetTable"])
+    upper = {s.upper() for s in sources}
+    if "ASSETTABLE" in upper and "ASSETBOOK" not in upper:
+        sources.append("AssetBook")
+    return config
+
+
 # version N -> function that upgrades a config dict from N to N+1
-MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {1: _v1_to_v2}
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

@@ -40,8 +40,11 @@ class PrintStatus(str, Enum):
 
 @dataclass
 class FieldDef:
-    column: str
+    column: str  # output key (UPPER CASE in records) and, by default, the source column name
     alias: str = ""
+    table: str = ""  # "" = main source; otherwise the table of one of the profile's lookups
+    source_column: str = ""  # when the source column name differs from `column`
+    fallback: str = ""  # "COLUMN" (main source) or "TABLE.COLUMN": used when this value is empty
     data_type: str = "string"  # string | int | decimal | date
     searchable: bool = False
     range_search: bool = False  # date fields: search by From - To
@@ -53,6 +56,24 @@ class FieldDef:
     @property
     def label(self) -> str:
         return self.alias or self.column
+
+    @property
+    def source(self) -> str:
+        return self.source_column or self.column
+
+
+@dataclass
+class LookupDef:
+    """One row from a related table per main row (SQL OUTER APPLY ... TOP 1).
+
+    join: pairs of (lookup column, main column) that must be equal.
+    order_by: which related row wins when there are several, e.g. ["ACQUISITIONPRICE DESC", "BOOKID"].
+    """
+
+    table: str
+    schema: str = "dbo"
+    join: list[list[str]] = field(default_factory=list)
+    order_by: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -75,6 +96,7 @@ class DataProfile:
     schema: str = "dbo"
     dataarea_column: str = "DATAAREAID"  # empty string = no company filter
     fields: list[FieldDef] = field(default_factory=list)
+    lookups: list[LookupDef] = field(default_factory=list)
     order_by: list[str] = field(default_factory=list)
     row_limit: int = 200
     qr: QrConfig = field(default_factory=QrConfig)
@@ -104,6 +126,7 @@ class DataProfile:
     def from_dict(cls, data: dict[str, Any]) -> "DataProfile":
         d = _pick(cls, dict(data))
         d["fields"] = [FieldDef(**_pick(FieldDef, f)) for f in d.get("fields", [])]
+        d["lookups"] = [LookupDef(**_pick(LookupDef, lk)) for lk in d.get("lookups", [])]
         d["qr"] = QrConfig(**_pick(QrConfig, d.get("qr", {})))
         return cls(**d)
 

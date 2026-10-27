@@ -3,16 +3,53 @@ import pytest
 from qrlabel.domain.errors import ValidationError
 from qrlabel.services.query_builder import build_select, escape_like, quote_ident
 
-APPROVED = ["AssetTable"]
+APPROVED = ["AssetTable", "AssetBook"]
 
 
 def test_basic_select(profile):
     sql, params = build_select(profile, {"ASSETID": "FA-1"}, "dat", approved_sources=APPROVED)
     assert sql == (
-        "SELECT TOP (200) [ASSETID], [NAME], [TECHINFO1], [TECHINFO2], [CREATEDDATE] FROM [dbo].[AssetTable] "
-        "WHERE [DATAAREAID] = ? AND [ASSETID] LIKE ? ESCAPE '\\' ORDER BY [ASSETID]"
+        "SELECT TOP (200) a.[ASSETID] AS [ASSETID], a.[NAME] AS [NAME], a.[TECHINFO1] AS [TECHINFO1], "
+        "COALESCE(NULLIF(l1.[PURCHID], ''), a.[TECHINFO2]) AS [PURCHID], l1.[DIMENSION] AS [DIMENSION], "
+        "l1.[ACQUISITIONDATE] AS [ACQUISITIONDATE], l1.[ACQUISITIONPRICE] AS [ACQUISITIONPRICE], "
+        "a.[CREATEDDATE] AS [CREATEDDATE] "
+        "FROM [dbo].[AssetTable] AS a "
+        "OUTER APPLY (SELECT TOP 1 x1.[ACQUISITIONDATE], x1.[ACQUISITIONPRICE], x1.[DIMENSION], x1.[PURCHID] "
+        "FROM [dbo].[ASSETBOOK] AS x1 WHERE x1.[ASSETID] = a.[ASSETID] AND x1.[DATAAREAID] = a.[DATAAREAID] "
+        "ORDER BY x1.[ACQUISITIONPRICE] DESC, x1.[BOOKID] ASC) AS l1 "
+        "WHERE a.[DATAAREAID] = ? AND a.[ASSETID] LIKE ? ESCAPE '\\' ORDER BY a.[ASSETID] ASC"
     )
     assert params == ["dat", "%FA-1%"]
+
+
+def test_search_on_lookup_field_with_fallback(profile):
+    sql, params = build_select(profile, {"PURCHID": "140520"}, "db1", approved_sources=APPROVED)
+    assert "COALESCE(NULLIF(l1.[PURCHID], ''), a.[TECHINFO2]) LIKE ? ESCAPE '\\'" in sql
+    assert params == ["db1", "%140520%"]
+
+
+def test_lookup_table_must_be_approved(profile):
+    with pytest.raises(ValidationError):
+        build_select(profile, {}, "db1", approved_sources=["AssetTable"])
+
+
+def test_lookup_columns_checked_against_database(profile):
+    allowed = {"AssetTable": ["ASSETID", "NAME", "TECHINFO1", "TECHINFO2", "CREATEDDATE", "DATAAREAID"],
+               "AssetBook": ["ASSETID", "DATAAREAID", "BOOKID", "PURCHID", "DIMENSION", "ACQUISITIONDATE"]}
+    with pytest.raises(ValidationError):  # ACQUISITIONPRICE missing in the "database"
+        build_select(profile, {}, "db1", approved_sources=APPROVED, allowed_columns=allowed)
+    allowed["AssetBook"].append("ACQUISITIONPRICE")
+    build_select(profile, {}, "db1", approved_sources=APPROVED, allowed_columns=allowed)
+
+
+def test_bad_fallback_and_sort_rejected(profile):
+    profile.fields[3].fallback = "a.b.c"
+    with pytest.raises(ValidationError):
+        build_select(profile, {}, "db1", approved_sources=APPROVED)
+    profile.fields[3].fallback = ""
+    profile.lookups[0].order_by = ["BOOKID; DROP"]
+    with pytest.raises(ValidationError):
+        build_select(profile, {}, "db1", approved_sources=APPROVED)
 
 
 def test_user_input_never_in_sql(profile):
@@ -74,7 +111,7 @@ def test_date_range_inclusive(profile):
 
     sql, params = build_select(profile, {}, "db1", approved_sources=APPROVED,
                                ranges={"CREATEDDATE": (date(2026, 1, 1), date(2026, 1, 31))})
-    assert "[CREATEDDATE] >= ? AND [CREATEDDATE] < ?" in sql
+    assert "a.[CREATEDDATE] >= ? AND a.[CREATEDDATE] < ?" in sql
     assert params == ["db1", datetime(2026, 1, 1), datetime(2026, 2, 1)]
 
 
@@ -101,7 +138,7 @@ def test_date_range_validation(profile):
 def test_no_company_filter_when_policy_disabled(profile):
     profile.dataarea_column = ""
     sql, params = build_select(profile, {}, "", approved_sources=APPROVED)
-    assert "DATAAREAID" not in sql and params == []
+    assert "a.[DATAAREAID] = ?" not in sql and params == []
 
 
 # ------------------------------------------------------------ list / range
@@ -145,7 +182,7 @@ def test_matches_case_insensitive():
 
 def test_sql_for_range_and_list(profile):
     sql, params = build_select(profile, {"ASSETID": "A1..A3, B7, B9"}, "db1", approved_sources=APPROVED)
-    assert "([ASSETID] IN (?, ?) OR ([ASSETID] >= ? AND [ASSETID] <= ?))" in sql
+    assert "(a.[ASSETID] IN (?, ?) OR (a.[ASSETID] >= ? AND a.[ASSETID] <= ?))" in sql
     assert params == ["db1", "B7", "B9", "A1", "A3"]
     assert "LIKE" not in sql
 

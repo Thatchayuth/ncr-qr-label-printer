@@ -121,7 +121,9 @@ class SqlServerDataSource:
         return self._columns_cache[key]
 
     def search(self, profile: DataProfile, criteria: dict[str, str], company: str, ranges=None) -> list[dict[str, Any]]:
-        allowed = [c for c, _ in self.list_columns(profile.source, profile.schema)]
+        allowed = {profile.source: [c for c, _ in self.list_columns(profile.source, profile.schema)]}
+        for lk in profile.lookups:
+            allowed[lk.table] = [c for c, _ in self.list_columns(lk.table, lk.schema)]
         sql, params = build_select(
             profile, criteria, company, approved_sources=self.approved_sources, allowed_columns=allowed, ranges=ranges
         )

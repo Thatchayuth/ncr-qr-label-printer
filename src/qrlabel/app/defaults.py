@@ -7,7 +7,7 @@ Label Designer once the real sticker size is measured.
 """
 from __future__ import annotations
 
-from ..domain.models import DataProfile, FieldDef, LabelElement, LabelTemplate, QrConfig
+from ..domain.models import DataProfile, FieldDef, LabelElement, LabelTemplate, LookupDef, QrConfig
 
 DEFAULT_PROFILE_ID = "asset"
 DEFAULT_TEMPLATE_ID = "asset-qr-sample-40x30"
@@ -24,9 +24,19 @@ def default_asset_profile() -> DataProfile:
             FieldDef(column="ASSETID", alias="Fixed asset number", searchable=True, display=True, required=True),
             FieldDef(column="NAME", alias="Name", searchable=True, display=True),
             FieldDef(column="TECHINFO1", alias="PU No.", searchable=True, display=True),
-            FieldDef(column="TECHINFO2", alias="PO No.", searchable=True, display=True),
+            # PO as in the previous application: AssetBook.PurchId; TechInfo2 when PurchId is empty
+            FieldDef(column="PURCHID", alias="PO No.", table="ASSETBOOK", fallback="TECHINFO2", searchable=True, display=True),
+            FieldDef(column="DIMENSION", alias="Department", table="ASSETBOOK", searchable=True, display=True),
+            FieldDef(column="ACQUISITIONDATE", alias="Acquisition date", table="ASSETBOOK", data_type="date",
+                     display=True, range_search=True, fmt="%d/%m/%Y"),
+            FieldDef(column="ACQUISITIONPRICE", alias="Acquisition price", table="ASSETBOOK", data_type="decimal",
+                     display=True, fmt=",2"),
             FieldDef(column="CREATEDDATE", alias="Created date", data_type="date", display=True, range_search=True, fmt="%d/%m/%Y"),
         ],
+        # One AssetBook row per asset: the book with the acquisition price wins (some assets have
+        # a second book with price 0), then by BookId.
+        lookups=[LookupDef(table="ASSETBOOK", join=[["ASSETID", "ASSETID"], ["DATAAREAID", "DATAAREAID"]],
+                           order_by=["ACQUISITIONPRICE DESC", "BOOKID"])],
         order_by=["ASSETID"],
         row_limit=200,
         qr=QrConfig(format="plain", fields=["ASSETID"], error_correction="M", max_bytes=100),

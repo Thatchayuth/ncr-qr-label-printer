@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- PO No. now comes from `AssetBook.PurchId` as in the previous application, with `TechInfo2` used when PurchId is empty.
+- New columns from AssetBook: Department (Dimension), Acquisition date (with From–To filter) and Acquisition price (`#,##0.00`).
+- Data profiles can read one row per asset from a related table (`OUTER APPLY TOP 1`) with a chosen order, and can fall back to another column.
+- Config v2 migration adds `AssetBook` to the approved sources.
+- Search results: Name column has a fixed width that can be resized, and numbers are right-aligned.
+- Startup splash screen.
+- Setup wizard: removed the stray back-arrow button.
+
 ## 0.9.0 — 2026-10-26 (release candidate for UAT)
 
 - Windows installer (Inno Setup): per-user or all-users, shortcuts, keeps data on upgrade, asks before deleting data on uninstall.

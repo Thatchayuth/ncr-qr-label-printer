@@ -82,9 +82,20 @@ Connected through the app (Application Settings → Test connection) and with a 
   - Fixed asset number = `ASSETID`
   - Name = `NAME`
   - PU No. = `TECHINFO1` (confirmed by the user)
-  - PO No. = `TECHINFO2`. This is inferred: 76 rows equal `ASSETBOOK.PURCHID`, and some rows have a PO only here. Some values are multi-line (`PO: …\nPO Date: …`).
+  - ~~PO No. = `TECHINFO2`~~ This inference was wrong (see the correction below).
   - Created date = `CREATEDDATE`
 - Search is available on Fixed asset number, Name, PU No. and PO No.
+
+### Correction from the previous application's code (2026-10-27)
+
+The old application loads an asset by its QR code (AssetId) with:
+`SELECT AssetTable.AssetId, AssetTable.Name, AssetBook.AcquisitionDate, AssetBook.AcquisitionPrice, AssetBook.PurchId, AssetBook.Dimension FROM AssetTable, AssetBook WHERE AssetTable.AssetId = AssetBook.AssetId AND AssetTable.AssetId = @AssetId`
+
+- **PO No. = `ASSETBOOK.PURCHID`.** In db1, 1,483 assets have it and only 107 have `TECHINFO2`. 1,396 assets have a PO only in PurchId, and 11 have different values in the two columns. The profile uses PurchId and falls back to `TECHINFO2` when PurchId is empty (e.g. FA-IT-5-22-0040).
+- Added from AssetBook: Department = `DIMENSION`, Acquisition date = `ACQUISITIONDATE` (From–To filter), Acquisition price = `ACQUISITIONPRICE` (format `#,##0.00`).
+- Books: db1 has `S-line` (5,952) and `D-Declinin` (9); db2/db3 have only `S-line`. Two db1 assets have both books, and their S-line price is 0. The old join would show those assets twice. The new query takes one book per asset (`OUTER APPLY TOP 1`, highest acquisition price first, then BookId). Assets without a book (38 in db1) are still listed.
+- The old join did not compare DATAAREAID; the new one does.
+- Config v2 adds `AssetBook` to the approved sources automatically (backup `config.json.bak-v1`). Data profile `asset` v2 (this database) holds the new fields.
 
 ## Hardware results
 
