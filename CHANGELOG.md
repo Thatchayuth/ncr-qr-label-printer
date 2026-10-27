@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Phase 9: choose the parts of the program when installing.
+  - The installer asks "Use the program for": **Asset labels** and/or **Stock labels (inventory transfer journal)**. At least one is required. Silent install: `/TASKS="modasset,modjournal"`.
+  - Search & Print offers only the data profiles of the chosen parts. Profiles an admin made are always offered.
+  - With Stock labels, the app creates the "Inventory transfer journal" profile and the STOCK label (now bundled with the installer) on first start. Nothing existing is changed.
+  - Application Settings → "Parts of the program" changes the choice later. Re-installing with the same choice keeps that change; a different choice in the installer wins.
+  - Menus are decided by AD groups (see above), so the installer has no role choice.
+
 - Menus by Windows / Active Directory group.
   - The app reads the Windows user and their AD groups from the logon token. No extra login, no LDAP query; it also works offline with a cached domain logon.
   - Members of **ICT-RY** see every menu and open Data Profiles / Application Settings without the admin password.

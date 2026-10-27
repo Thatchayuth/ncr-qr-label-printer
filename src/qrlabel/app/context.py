@@ -51,6 +51,13 @@ class AppContext:
         self.access = Access(self.identity.user, self.identity.groups, self.config.get("access"))
         log.info("User %s: %s", self.identity.user, self.access.describe())
         self._seed()
+        from .modules import apply_install_options, ensure_modules
+
+        try:
+            apply_install_options(self)
+            ensure_modules(self)
+        except Exception:  # a module problem must not stop the app
+            log.exception("Could not prepare the chosen modules")
 
     def reload_access(self) -> None:
         """After the access settings changed: keep a password unlock of this session."""

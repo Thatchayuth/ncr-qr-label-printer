@@ -105,6 +105,7 @@ class SettingsPage(QWidget):
         card.body.addWidget(self.banner)
         card.setMaximumWidth(760)
         root.addWidget(card)
+        root.addWidget(self._build_modules_card())
         root.addWidget(self._build_access_card())
         root.addStretch(1)
 
@@ -131,6 +132,7 @@ class SettingsPage(QWidget):
         self.company.setText(d.get("company", ""))
         self.sources.setText(", ".join(self.ctx.config["approved_sources"]))
         self._update_enabled()
+        self._load_modules()
         self._load_access()
 
     def _update_enabled(self) -> None:
@@ -202,6 +204,60 @@ class SettingsPage(QWidget):
         self.ctx.config = new
         self.load()
         self.banner.show_message("Settings saved.", "success")
+        if self.on_saved:
+            self.on_saved()
+
+    # ------------------------------------------------------------ modules
+
+    def _build_modules_card(self) -> Card:
+        from ...app.modules import MODULES
+
+        card = Card("Parts of the program",
+                    "Chosen when installing. Search & Print offers only the data profiles of the ticked parts "
+                    "(profiles you made yourself are always offered).")
+        self.module_checks: dict[str, QCheckBox] = {}
+        for key, name in MODULES.items():
+            box = QCheckBox(name)
+            self.module_checks[key] = box
+            card.body.addWidget(box)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        save = QPushButton("Save parts")
+        save.setObjectName("Primary")
+        row.addWidget(save)
+        card.body.addLayout(row)
+        self.modules_banner = Banner()
+        card.body.addWidget(self.modules_banner)
+        card.setMaximumWidth(760)
+        save.clicked.connect(self._save_modules)
+        return card
+
+    def _load_modules(self) -> None:
+        from ...app.modules import enabled_modules
+
+        on = set(enabled_modules(self.ctx))
+        for key, box in self.module_checks.items():
+            box.setChecked(key in on)
+
+    def _save_modules(self) -> None:
+        from ...app.modules import ensure_modules
+
+        chosen = [k for k, box in self.module_checks.items() if box.isChecked()]
+        if not chosen:
+            self.modules_banner.show_message("Tick at least one part.", "error")
+            return
+        new = copy.deepcopy(self.ctx.config)
+        new["modules"] = chosen
+        try:
+            self.ctx.config_service.save(new)
+            self.ctx.config = new
+            ensure_modules(self.ctx)  # e.g. adds the journal profile and STOCK label when ticked
+        except Exception as e:
+            self.modules_banner.show_message(error_text(e), "error")
+            return
+        self._load_modules()
+        self.sources.setText(", ".join(self.ctx.config["approved_sources"]))
+        self.modules_banner.show_message("Parts saved.", "success")
         if self.on_saved:
             self.on_saved()
 

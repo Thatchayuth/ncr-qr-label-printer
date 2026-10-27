@@ -56,6 +56,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "admin": {
         "password_hash": "",  # empty = built-in initial password (see services.admin_auth)
     },
+    # Parts of the program (app.modules); "install_modules" = last choice taken over from the installer
+    "modules": ["asset", "journal"],
+    "install_modules": [],
     # Menus by Active Directory group of the Windows user (see services.access)
     "access": {
         "admin_groups": ["ICT-RY"],  # see every menu, no admin password needed
@@ -106,6 +109,8 @@ SCHEMA: dict[str, Any] = {
             "type": "object",
             "properties": {"password_hash": {"type": "string", "maxLength": 300}},
         },
+        "modules": {"type": "array", "items": {"enum": ["asset", "journal"]}},
+        "install_modules": {"type": "array", "items": {"enum": ["asset", "journal"]}},
         "access": {
             "type": "object",
             "properties": {

@@ -46,7 +46,14 @@ RestartApplications=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
+; Parts of the program (written to install-options.json, read by the app on start).
+; Silent install: /TASKS="modasset,modjournal" (add desktopicon for a desktop shortcut).
+Name: "modasset"; Description: "Asset labels (fixed assets)"; GroupDescription: "Use the program for:"
+Name: "modjournal"; Description: "Stock labels (inventory transfer journal)"; GroupDescription: "Use the program for:"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+[UninstallDelete]
+Type: files; Name: "{app}\install-options.json"
 
 [InstallDelete]
 ; Remove files of the previous version so old libraries do not stay behind.
@@ -67,6 +74,39 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID = wpSelectTasks) and (not WizardIsTaskSelected('modasset')) and
+     (not WizardIsTaskSelected('modjournal')) then
+  begin
+    MsgBox('Choose at least one part: Asset labels or Stock labels.', mbError, MB_OK);
+    Result := False;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Modules: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    Modules := '';
+    if WizardIsTaskSelected('modasset') then
+      Modules := '"asset"';
+    if WizardIsTaskSelected('modjournal') then
+    begin
+      if Modules <> '' then
+        Modules := Modules + ', ';
+      Modules := Modules + '"journal"';
+    end;
+    if Modules = '' then
+      Modules := '"asset", "journal"';
+    SaveStringToFile(ExpandConstant('{app}\install-options.json'),
+      '{"modules": [' + Modules + ']}' + #13#10, False);
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataPath: String;

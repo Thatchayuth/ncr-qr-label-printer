@@ -121,9 +121,9 @@ def test_install_journal_profile(tmp_path, monkeypatch):
     from qrlabel.app.context import AppContext
     from qrlabel.app.modules import install_journal_profile
 
-    ctx = AppContext()
-    assert install_journal_profile(ctx, ["t1"]) is True
-    assert ctx.profiles.get(JOURNAL_PROFILE_ID).template_ids == ["t1"]
+    ctx = AppContext()  # both parts are on by default: the journal profile is created on start
+    p = ctx.profiles.get(JOURNAL_PROFILE_ID)
+    assert p.template_ids == ["25c45638326c4a489b36112d4c1e8c09"]  # bundled STOCK label
     again = AppContext()
     assert {s.upper() for s in JOURNAL_SOURCES} <= {s.upper() for s in again.config["approved_sources"]}
     assert install_journal_profile(again) is False  # never overwrites an existing (maybe edited) profile

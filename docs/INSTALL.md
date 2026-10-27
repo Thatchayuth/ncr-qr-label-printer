@@ -78,3 +78,16 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 ```
 
 ผลลัพธ์อยู่ที่ `dist\installer\NCR-QR-Label-Printer-Setup-<version>.exe`
+
+
+## เลือกส่วนของโปรแกรมตอนติดตั้ง
+
+หน้า **Select Additional Tasks** ของตัวติดตั้งมีหัวข้อ "Use the program for:"
+- **Asset labels (fixed assets)**: พิมพ์สติกเกอร์ทรัพย์สิน (AssetTable)
+- **Stock labels (inventory transfer journal)**: พิมพ์สติกเกอร์ STOCK จาก Transfer journal (ยิงบาร์โค้ดเลข Journal)
+
+ต้องเลือกอย่างน้อยหนึ่งอย่าง ถ้าเลือก Stock labels โปรแกรมจะสร้างโปรไฟล์ "Inventory transfer journal" และแบบสติกเกอร์ STOCK ให้เองเมื่อเปิดครั้งแรก
+ติดตั้งแบบเงียบ (silent): `NCR-Print-Label-Setup-x.y.z.exe /VERYSILENT /TASKS="modjournal"` (ใส่ `modasset,modjournal` ถ้าต้องการทั้งสองอย่าง)
+ภายหลังผู้ดูแลเปลี่ยนได้ที่ Application Settings → **Parts of the program**
+
+สิทธิ์การเห็นเมนูไม่ได้เลือกตอนติดตั้ง ระบบใช้กลุ่ม AD ของ Windows: กลุ่ม ICT-RY เห็นทุกเมนู ผู้ใช้อื่นเห็น Search & Print, Print History, Printer Settings

@@ -13,6 +13,19 @@ DEFAULT_PROFILE_ID = "asset"
 DEFAULT_TEMPLATE_ID = "asset-qr-sample-40x30"
 
 
+def bundled_template_id(role: str) -> str:
+    """Id of a bundled template by its role in index.json (e.g. "journal"); '' when missing."""
+    import json
+
+    from .paths import resource_path
+
+    try:
+        index = json.loads((resource_path("templates") / "index.json").read_text(encoding="utf-8"))
+        return str(index.get(role) or "")
+    except Exception:
+        return ""
+
+
 def bundled_templates() -> tuple[list[LabelTemplate], str]:
     """Label templates shipped with the app (resources/templates) and the id of the default one.
 

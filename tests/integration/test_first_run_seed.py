@@ -2,6 +2,7 @@ from qrlabel.app.defaults import bundled_templates
 from qrlabel.domain.layout import validate_template
 
 BUNDLED_ID = "985aa6dd0dda40c68aaff4fcf1b27d85"  # "New label" (v14 on the design PC)
+STOCK_ID = "25c45638326c4a489b36112d4c1e8c09"  # "InventJournal Label" (STOCK label, v9 on the design PC)
 
 
 def test_bundled_template_is_valid():
@@ -18,7 +19,7 @@ def test_new_install_uses_bundled_template(tmp_path, monkeypatch):
     from qrlabel.app.context import AppContext
 
     ctx = AppContext()
-    assert [t.id for t in ctx.templates.list_latest()] == [BUNDLED_ID]
+    assert sorted(t.id for t in ctx.templates.list_latest()) == sorted([BUNDLED_ID, STOCK_ID])
     assert ctx.profiles.get("asset").template_id == BUNDLED_ID
     # it can print straight away
     from qrlabel.infrastructure.printing.adapters import MockPrinterAdapter
@@ -41,7 +42,7 @@ def test_existing_install_keeps_its_templates(tmp_path, monkeypatch):
     own.id, own.name = "my-own", "Own design"
     ctx.templates.save(own)
     again = AppContext()  # second start: nothing re-seeded or overwritten
-    assert sorted(t.id for t in again.templates.list_latest()) == sorted([BUNDLED_ID, "my-own"])
+    assert sorted(t.id for t in again.templates.list_latest()) == sorted([BUNDLED_ID, STOCK_ID, "my-own"])
     assert again.templates.get(BUNDLED_ID).version == 1
 
 

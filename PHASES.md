@@ -153,7 +153,7 @@ Facts from AX (read-only checks): InventJournalTrans has 2,008,396 rows in db1. 
 | 6 ✅ | Bind label templates to data profiles: allowed list + default; Search & Print shows only allowed labels; designer "Use with profiles"; warnings for fields a template needs | done 2026-10-27 | — |
 | 7 ✅ | Search options per field (exact / starts with / contains), "at least one search value" option, field order (follows Move up/down) | done 2026-10-27 | — |
 | 8 ✅ | Inventory transfer journal profile: fixed filter (JOURNALTYPE = 2), related-table fixed values incl. @VIRTUAL company, `abs` number format; InventJournalTrans + InventDim + InventTable + InventTableModule; STOCK label bound | done 2026-10-27 (JournalError left out, as agreed) | 6, 7 |
-| 9 | Installer choices: role (operator / administrator) and modules (Asset / Inventory journal); hide menus and profiles; admin can change later | 1–1.5 days | 8 |
+| 9 ✅ | Installer choice of parts (Asset / Stock labels) + menus by AD group (ICT-RY = all; others Search & Print, History, Printer) + Admin button with password; STOCK label bundled | done 2026-10-27 | 8 |
 | 10 | TE210 hardware tests, UAT, ship the fixed-QR template, release 1.0.0 | ~1 day + team testing | all (hardware tests can start now) |
 
 Out of scope: per-user login or permissions (Masterplan §15 "User Management Server"), decoding JournalError INFOLOG, and writing anything back to AX.
@@ -192,3 +192,5 @@ Label (like the "STOCK" sample): `STOCK เกรด [InventSizeId]` / `รห�
 - Settings live in config `access` (admin_groups, user_menus) and can be edited in Application Settings.
 - Group changes in AD apply after the user signs in to Windows again. PCs with one shared Windows account give everyone that account's rights.
 - Still open for Phase 9: installer choices are probably no longer needed (one install for everyone; AD decides the menus). Per-profile access (Asset / Journal by group) only if asked.
+
+**Phase 9 results:** 222 tests pass. The installer was built (40 MB) with the part choice and the bundled STOCK label. It was **not** test-installed on the dev PC, because a silent test install shares the AppId with the copy the user has installed. To test: run Setup on a test PC or VM, untick "Asset labels", and check that Search & Print offers only "Inventory transfer journal".

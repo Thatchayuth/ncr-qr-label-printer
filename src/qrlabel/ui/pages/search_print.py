@@ -418,10 +418,17 @@ class SearchPrintPage(QWidget):
 
     # ------------------------------------------------------------------ state
 
+    def _offered_profiles(self) -> list[DataProfile]:
+        """Profiles of the parts chosen at install (Application Settings); own profiles always."""
+        from ...app.modules import hidden_profile_ids
+
+        hidden = hidden_profile_ids(self.ctx)
+        return [p for p in self.ctx.profiles.list_latest() if p.id not in hidden]
+
     def reload(self) -> None:
         """Re-read profiles/templates/settings (called when the page is shown)."""
         ui = self.ctx.config["ui"]
-        self.profiles = self.ctx.profiles.list_latest()
+        self.profiles = self._offered_profiles()
         self.templates = self.ctx.templates.list_latest()
 
         self.profile_combo.blockSignals(True)
@@ -459,7 +466,7 @@ class SearchPrintPage(QWidget):
         """Pick up newly saved profile/template versions without clearing the search or results."""
         pid, tid = self.profile_combo.currentData(), self.template_combo.currentData()
         old = self.current_profile()
-        self.profiles = self.ctx.profiles.list_latest()
+        self.profiles = self._offered_profiles()
         self.templates = self.ctx.templates.list_latest()
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()

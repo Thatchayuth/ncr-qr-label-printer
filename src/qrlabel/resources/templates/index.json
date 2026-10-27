@@ -1,7 +1,9 @@
 {
-  "_comment": "Label templates installed on first run. 'default' is used by the Asset data profile.",
+  "_comment": "Label templates shipped with the app. 'default' = Asset data profile, 'journal' = inventory transfer journal (STOCK label).",
   "default": "985aa6dd0dda40c68aaff4fcf1b27d85",
   "files": [
-    "new-label.json"
-  ]
+    "new-label.json",
+    "stock-label.json"
+  ],
+  "journal": "25c45638326c4a489b36112d4c1e8c09"
 }
