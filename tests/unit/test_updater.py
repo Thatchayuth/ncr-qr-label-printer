@@ -132,4 +132,4 @@ def test_config_default_folder(tmp_path, monkeypatch):
     from qrlabel.app.context import AppContext
 
     u = AppContext().config["update"]
-    assert u["folder"] == r"\\ncr230\NCR_Data\General\ICT\NCRPrintLabel" and u["check_on_start"] is True
+    assert u["folder"] == r"\\ncr230\RY_File\_Free-OSS\NCRPrintLabel" and u["check_on_start"] is True

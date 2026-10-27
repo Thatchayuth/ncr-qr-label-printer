@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2 (2026-10-27)
+
+- Update folder moved to `\\ncr230\RY_File\_Free-OSS\NCRPrintLabel`. 0.9.2 is also published in the old folder, so PCs with 0.9.1 move over by themselves.
+
 ## 0.9.1 (2026-10-27)
 
 - Automatic updates from a shared folder (no database). Test folder: `\\ncr230\NCR_Data\General\ICT\NCRPrintLabel`.

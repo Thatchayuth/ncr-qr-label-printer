@@ -8,7 +8,7 @@
 # version whose installer is not completely copied yet. Refuses to publish an older or equal version
 # unless -Force is given.
 param(
-    [string]$Folder = '\\ncr230\NCR_Data\General\ICT\NCRPrintLabel',
+    [string]$Folder = '\\ncr230\RY_File\_Free-OSS\NCRPrintLabel',
     [string]$Notes = '',
     [switch]$Required,
     [switch]$Force
@@ -50,8 +50,9 @@ $data = [ordered]@{
     by        = "$env:USERDOMAIN\$env:USERNAME"
 }
 $json = $data | ConvertTo-Json
-$tmp = "$manifest.tmp"
-[System.IO.File]::WriteAllText($tmp, $json, (New-Object System.Text.UTF8Encoding($false)))
-Move-Item -LiteralPath $tmp -Destination $manifest -Force
+# Written in place (not temp file + rename): the share may allow writing but not deleting or renaming
+# files, as for ICT-RY on \\ncr230\RY_File. latest.json is still written only after the installer is
+# copied and verified, and it is small enough to be written in one go.
+[System.IO.File]::WriteAllText($manifest, $json, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "Published version $version to $Folder" -ForegroundColor Green
 Write-Host $json

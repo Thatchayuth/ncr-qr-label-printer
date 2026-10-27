@@ -61,7 +61,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "install_modules": [],
     # Automatic updates (services.updater): shared folder with latest.json and the installer
     "update": {
-        "folder": r"\\ncr230\NCR_Data\General\ICT\NCRPrintLabel",  # test location (2026-10-27)
+        "folder": r"\\ncr230\RY_File\_Free-OSS\NCRPrintLabel",
         "check_on_start": True,
     },
     # Menus by Active Directory group of the Windows user (see services.access)
