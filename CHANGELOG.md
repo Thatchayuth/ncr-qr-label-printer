@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Label Designer: clicking an element no longer makes it jump. A click with a tiny mouse wobble used to start a move, which snapped the element to the grid or a centre guide (also on the resize handle). Elements now move only after a real drag. X / Y / W / H show 2 decimals and are written back only when changed, so leaving a property box no longer rounds the position or size.
+
 - Barcode scanning of the journal number.
   - The Journal box is first on the inventory journal search and is focused when the page opens.
   - The scanner sends `90959F+072`; the box changes it to `90959F_072` (AX format) while scanning.

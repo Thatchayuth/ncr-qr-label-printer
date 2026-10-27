@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsObject, QGraphicsScene, QGraphicsView
+from PySide6.QtWidgets import QApplication, QGraphicsItem, QGraphicsObject, QGraphicsScene, QGraphicsView
 
 from ...domain.layout import mm_to_dots
 from ...domain.models import LabelElement, LabelTemplate
@@ -67,6 +67,8 @@ class ElementItem(QGraphicsObject):
         self._resizing = False
         self._dragging = False  # True while the mouse moves the item (smart guides active)
         self.bypass_snap = False  # exact moves from the property panel / arrow keys
+        self._press_screen = None  # where the mouse button went down (screen pixels)
+        self._moved = False  # mouse went further than the drag distance: a real drag, not a click
         self.warnings: list[str] = []
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsMovable
@@ -192,6 +194,8 @@ class ElementItem(QGraphicsObject):
         super().hoverMoveEvent(event)
 
     def mousePressEvent(self, event) -> None:
+        self._press_screen = event.screenPos()
+        self._moved = False
         if not self.el.locked and self.isSelected() and self._handle_rect().adjusted(-0.5, -0.5, 0.5, 0.5).contains(event.pos()):
             self._resizing = True
             event.accept()
@@ -199,6 +203,15 @@ class ElementItem(QGraphicsObject):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
+        if not self._moved:
+            # A click always wobbles a pixel or two; moving then would snap the item to the grid or a
+            # guide and make it jump. Only start moving / resizing after a real drag.
+            if self._press_screen is not None and (
+                (event.screenPos() - self._press_screen).manhattanLength() < QApplication.startDragDistance()
+            ):
+                event.accept()
+                return
+            self._moved = True
         if not self._resizing:
             # guides only for a single element: several items snapping on their own would drift apart
             self._dragging = not self.el.locked and not self._co_selected()
@@ -225,6 +238,8 @@ class ElementItem(QGraphicsObject):
 
     def mouseReleaseEvent(self, event) -> None:
         self._dragging = False
+        self._press_screen = None
+        self._moved = False
         if isinstance(self.scene(), LabelScene):
             self.scene().set_guides([], [])
         if self._resizing:

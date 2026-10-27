@@ -314,8 +314,9 @@ class DesignerPage(QWidget):
         f.setContentsMargins(0, 0, 0, 0)
         f.setHorizontalSpacing(12)
         f.setVerticalSpacing(8)
-        self.e_x, self.e_y = _mm_spin(), _mm_spin()
-        self.e_w, self.e_h = _mm_spin(0, 300), _mm_spin(0, 300)
+        # 2 decimals like the stored positions: 1 decimal rounded 37.15 to 37.2 and made items jump
+        self.e_x, self.e_y = _mm_spin(decimals=2), _mm_spin(decimals=2)
+        self.e_w, self.e_h = _mm_spin(0, 300, decimals=2), _mm_spin(0, 300, decimals=2)
         pos = QHBoxLayout()
         pos.addWidget(self.e_x)
         pos.addWidget(self.e_y)
@@ -1196,7 +1197,14 @@ class DesignerPage(QWidget):
         if not item:
             return
         el = item.el
-        el.w_mm, el.h_mm = self.e_w.value(), self.e_h.value()
+
+        def changed(spin, current: float) -> bool:  # only what the user changed; never re-round the rest
+            return abs(spin.value() - round(current, spin.decimals())) > 1e-9
+
+        if changed(self.e_w, el.w_mm):
+            el.w_mm = self.e_w.value()
+        if changed(self.e_h, el.h_mm):
+            el.h_mm = self.e_h.value()
         el.rotation = self.e_rot.currentData()
         src = self.e_source.currentData()
         el.field = "" if src in (None, STATIC_TEXT) else src
@@ -1214,7 +1222,8 @@ class DesignerPage(QWidget):
         el.locked = self.e_lock.isChecked()
         item.apply_lock()
         item.refresh()
-        item.move_exact(self.e_x.value(), self.e_y.value())
+        if changed(self.e_x, item.pos().x()) or changed(self.e_y, item.pos().y()):
+            item.move_exact(self.e_x.value(), self.e_y.value())
         self._fill_element_form(el)
         if renamed or el.kind == "text":
             self._refresh_layers()
