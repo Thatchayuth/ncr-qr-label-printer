@@ -43,6 +43,31 @@ from .pages.settings_page import SettingsPage
 NAV_COLOR, NAV_SELECTED = "#94A3B8", "#FFFFFF"
 
 
+class PageHost(QWidget):
+    """Holds a page inside its scroll area and never lets it be squeezed.
+
+    Pages with wrapped text (card descriptions) report a height-for-width that equals their *minimum*
+    height. The scroll area then shrinks the page to that, and forms lose their row spacing (fields
+    touching each other on Application Settings). This host asks for the page's preferred height
+    instead; a taller page simply scrolls.
+    """
+
+    def __init__(self, page: QWidget) -> None:
+        super().__init__()
+        self.page = page
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(page)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
+        return False
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        least = super().minimumSizeHint()
+        return QSize(least.width(), max(least.height(), self.page.sizeHint().height()))
+
+
 class MainWindow(QMainWindow):
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
@@ -118,7 +143,7 @@ class MainWindow(QMainWindow):
                 scroll.setWidgetResizable(True)
                 scroll.setFrameShape(QFrame.Shape.NoFrame)
                 scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-                scroll.setWidget(page)
+                scroll.setWidget(PageHost(page))
                 self.stack.addWidget(scroll)
         self.nav.currentRowChanged.connect(self._show_row)
         self.nav.setCurrentRow(1)

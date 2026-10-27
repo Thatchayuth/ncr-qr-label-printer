@@ -2,6 +2,7 @@
 
 ## 0.9.3 (2026-10-27)
 
+- Fix: Application Settings (and any long page) could be squeezed. Fields touched each other and row spacing disappeared, especially with Windows display scaling. Pages now keep their preferred height and scroll instead.
 - Updates work for both kinds of installation:
   - "Install for me only": as before, no administrator needed.
   - "Install for all users" (Program Files): Windows shows a UAC prompt, so ICT can type an administrator account. Afterwards the program opens again as the user at the PC, not as the administrator. If the prompt is cancelled, the old version opens again.

@@ -330,8 +330,9 @@ class SettingsPage(QWidget):
         form = QFormLayout()
         form.setHorizontalSpacing(14)
         form.setVerticalSpacing(10)
+        # No word-wrapped labels inside a QFormLayout: they make Qt measure the whole page too short,
+        # and the scroll area then squeezes every form on the page (rows touching each other).
         self.me = QLabel()
-        self.me.setWordWrap(True)
         self.admin_groups = QLineEdit()
         self.admin_groups.setPlaceholderText("e.g. ICT-RY  (several: comma-separated; DOMAIN\\group also works)")
         menus = QWidget()
@@ -354,8 +355,11 @@ class SettingsPage(QWidget):
         form.addRow("You", self.me)
         form.addRow("Admin groups", self.admin_groups)
         form.addRow("Other users see", menus)
-        form.addRow("Your groups", self.my_groups)
         card.body.addLayout(form)
+        groups_head = QLabel("Your Active Directory groups")
+        groups_head.setObjectName("Muted")
+        card.body.addWidget(groups_head)
+        card.body.addWidget(self.my_groups)  # wraps, so it stays outside the form
         row = QHBoxLayout()
         row.addStretch(1)
         self.access_save_btn = QPushButton("Save access")
