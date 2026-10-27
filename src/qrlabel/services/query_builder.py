@@ -144,6 +144,23 @@ def format_pairs(pairs) -> str:
     return ", ".join(f"{c}={v}" for c, v in pairs or [])
 
 
+def parse_replace(rule: str) -> list[tuple[str, str]]:
+    """'+>_ ;>,' -> [('+', '_'), (';', ',')]. Each part is FROM>TO, separated by spaces."""
+    out = []
+    for part in (rule or "").split():
+        if part.count(">") != 1 or part.startswith(">"):
+            raise ValidationError(f"Replace '{part}' must look like FROM>TO, e.g. +>_")
+        a, b = part.split(">")
+        out.append((a, b))
+    return out
+
+
+def apply_replace(text: str, rule: str) -> str:
+    for a, b in parse_replace(rule):
+        text = text.replace(a, b)
+    return text
+
+
 def uses_virtual_company(profile: DataProfile) -> bool:
     return any(str(v).strip().upper() == VIRTUAL_COMPANY for lk in profile.lookups for _, v in (lk.conditions or []))
 
@@ -280,7 +297,7 @@ def build_select(
         fd = profile.get_field(column)
         if fd is None or not fd.searchable:
             raise ValidationError(f"Field '{column}' is not searchable in this profile.")
-        flt = parse_text_filter(text, fd.label, fd.search_mode)
+        flt = parse_text_filter(apply_replace(text, fd.replace), fd.label, fd.search_mode)
         q = expr(fd)
         if flt.contains is not None:
             where.append(f"{q} LIKE ? ESCAPE '\\'")

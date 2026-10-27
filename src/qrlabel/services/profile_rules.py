@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from ..domain.models import DataProfile, FieldDef
-from .query_builder import HARD_ROW_LIMIT, IDENT_RE, SEARCH_MODES, VIRTUAL_COMPANY, fixed_pairs, split_order, split_ref
+from .query_builder import HARD_ROW_LIMIT, IDENT_RE, SEARCH_MODES, VIRTUAL_COMPANY, fixed_pairs, parse_replace, split_order, split_ref
 
 # SQL Server types that cannot be compared with = / IN or used in ORDER BY
 UNSORTABLE_TYPES = {"ntext", "text", "image", "xml", "varbinary", "binary", "timestamp", "geography", "geometry"}
@@ -136,6 +136,12 @@ def validate_profile(p: DataProfile, columns: ColumnMap | None = None, template_
             issues.append(f"{f.label}: column {f.source} does not exist in {f.table or p.source}.")
         elif typ in UNSORTABLE_TYPES and (f.searchable or f.range_search):
             issues.append(f"{f.label}: {typ} columns cannot be searched. Turn off Search for this field.")
+        try:
+            parse_replace(f.replace)
+        except Exception as e:
+            issues.append(f"{f.label}: {e}")
+        if f.barcode and not f.searchable:
+            issues.append(f"{f.label}: Barcode needs Search turned on.")
         if f.search_mode not in SEARCH_MODES:
             issues.append(f"{f.label}: unknown search mode '{f.search_mode}'.")
         if f.range_search and f.data_type != "date":

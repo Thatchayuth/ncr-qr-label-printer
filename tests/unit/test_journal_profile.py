@@ -35,7 +35,8 @@ def test_virtual_company_falls_back_to_company():
 def test_journal_profile_settings():
     p = default_journal_profile(["tpl"])
     assert uses_virtual_company(p) and p.require_criteria
-    assert [f.column for f in p.searchable_fields] == ["VOUCHER", "ITEMID", "JOURNALID"]
+    assert [f.column for f in p.searchable_fields] == ["JOURNALID", "VOUCHER", "ITEMID"]  # Journal first (scanned)
+    assert p.fields[0].barcode and p.fields[0].replace == "+>_"
     assert all(f.search_mode == "starts" for f in p.searchable_fields)
     assert p.template_ids == ["tpl"] and p.template_id == "tpl"
     assert validate_profile(p, None) == []

@@ -49,6 +49,8 @@ class FieldDef:
     searchable: bool = False
     search_mode: str = "contains"  # one value typed: contains | starts | exact (lists and A..B ranges are always exact)
     range_search: bool = False  # date fields: search by From - To
+    barcode: bool = False  # scanned with a barcode reader: search right after a scan, ready for the next one
+    replace: str = ""  # characters to change in typed/scanned values, e.g. "+>_" (scanner sends + for _)
     display: bool = True
     required: bool = False
     default: str = ""

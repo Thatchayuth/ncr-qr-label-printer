@@ -13,7 +13,7 @@ from typing import Any
 from ...domain.errors import ValidationError
 from ...domain.models import DataProfile, FieldDef
 from ...services.formatting import is_null
-from ...services.query_builder import HARD_ROW_LIMIT, check_range_field, check_required_criteria, fixed_pairs, in_range, parse_text_filter, split_order, split_ref
+from ...services.query_builder import HARD_ROW_LIMIT, check_range_field, apply_replace, check_required_criteria, fixed_pairs, in_range, parse_text_filter, split_order, split_ref
 
 MOCK_COMPANY = "smp"
 _DEPARTMENTS = ["OADM", "FPRO_MOLD", "FPRO_LLH", "IT"]
@@ -103,7 +103,7 @@ class MockDataSource:
                 fd = profile.get_field(column)
                 if fd is None or not fd.searchable:
                     raise ValidationError(f"Field '{column}' is not searchable in this profile.")
-                flt = parse_text_filter(text, fd.label, fd.search_mode)
+                flt = parse_text_filter(apply_replace(text, fd.replace), fd.label, fd.search_mode)
                 projected = [r for r in projected if flt.matches(r.get(fd.column.upper()))]
         for column, rng in (ranges or {}).items():
             if rng[0] is None and rng[1] is None:

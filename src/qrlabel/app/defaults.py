@@ -147,6 +147,8 @@ def default_journal_profile(template_ids: list[str] | None = None) -> DataProfil
         schema="dbo",
         dataarea_column="DATAAREAID",
         fields=[
+            # scanned from the journal printout: the scanner sends 90959F+072 for 90959F_072
+            FieldDef(column="JOURNALID", alias="Journal", searchable=True, search_mode="starts", barcode=True, replace="+>_"),
             FieldDef(column="VOUCHER", alias="Voucher", searchable=True, search_mode="starts"),
             FieldDef(column="ITEMID", alias="Item number", searchable=True, search_mode="starts", required=True),
             FieldDef(column="ITEMNAME", alias="Item name", table="INVENTTABLE"),
@@ -155,7 +157,6 @@ def default_journal_profile(template_ids: list[str] | None = None) -> DataProfil
             dim_field("INVENTSIZEID", "Grade"),
             dim_field("INVENTBATCHID", "Batch No"),
             FieldDef(column="NOTES", alias="Note"),
-            FieldDef(column="JOURNALID", alias="Journal", searchable=True, search_mode="starts"),
             FieldDef(column="LINENUM", alias="Line", data_type="decimal"),
             FieldDef(column="TRANSDATE", alias="Date", data_type="date", range_search=True, fmt="%d/%m/%Y"),
             dim_field("INVENTLOCATIONID", "Warehouse"),

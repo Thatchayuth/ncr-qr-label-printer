@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Barcode scanning of the journal number.
+  - The Journal box is first on the inventory journal search and is focused when the page opens.
+  - The scanner sends `90959F+072`; the box changes it to `90959F_072` (AX format) while scanning.
+  - The search starts by itself when the scan ends, with or without Enter from the scanner. Slow typing by hand does not start it.
+  - After the results appear, the box text is selected, so the next scan replaces it.
+  - Data Profiles: new **Barcode** and **Replace** (e.g. `+>_`) columns for any search field.
+
 - Phase 8: Inventory transfer journal.
   - New data profile "Inventory transfer journal" (InventJournalTrans, only Transfer journals) with item name, unit, grade, batch, note, warehouse/location and the other InventDim fields. Search by Voucher, Item number or Journal (starts with), and by date. One label per journal line.
   - Data Profiles: **Fixed filter** on the main table (e.g. JOURNALTYPE=2) and **Fixed values** on related tables (e.g. MODULETYPE=0, DATAAREAID=@VIRTUAL). @VIRTUAL is the AX virtual company of the selected company (DB1 -> VIR).

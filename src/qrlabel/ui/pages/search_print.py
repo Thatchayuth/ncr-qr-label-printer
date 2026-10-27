@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QDate, QModelIndex, QPointF, QRectF, QSize, Qt
+import time
+
+from PySide6.QtCore import QDate, QModelIndex, QObject, QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPen, QShortcut, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -31,7 +33,7 @@ from ...app.context import AppContext
 from ...domain.models import DataProfile, LabelTemplate, PrintStatus, new_id
 from ...rendering.raster import render_label_image
 from ...services.formatting import build_label_values, format_value
-from ...services.query_builder import has_criteria
+from ...services.query_builder import apply_replace, has_criteria
 from ..icons import icon, pixmap
 from ..widgets import Banner, Card, chip, labeled, nice_calendar, page_header, pil_to_pixmap, sticker_pixmap
 from ..workers import error_text, run_async
@@ -60,6 +62,56 @@ def search_tooltip(mode: str) -> str:
         "Separate values with comma, semicolon or new line (paste a column from Excel).<br>"
         "Ranges and single values can be mixed."
     )
+
+
+
+def _replace_live(edit: QLineEdit, text: str, rule: str) -> None:
+    """Show the corrected value while typing/scanning, e.g. 90959F+072 -> 90959F_072."""
+    fixed = apply_replace(text, rule)
+    if fixed != text:
+        pos = edit.cursorPosition() + len(fixed) - len(text)
+        edit.setText(fixed)
+        edit.setCursorPosition(max(0, pos))
+
+
+class ScanWatcher(QObject):
+    """Runs a search when a barcode scanner has finished typing into a box.
+
+    Scanners type a character every few milliseconds; people need 100 ms or more. When at least
+    MIN_CHARS characters arrived quickly and nothing follows for IDLE_MS, the scan is complete.
+    Scanners that send Enter at the end search through returnPressed instead (only once).
+    """
+
+    MAX_GAP_MS = 50
+    IDLE_MS = 150
+    MIN_CHARS = 4
+
+    def __init__(self, edit: QLineEdit, on_scan) -> None:
+        super().__init__(edit)
+        self.edit, self.on_scan = edit, on_scan
+        self.fast = 0
+        self.last = 0.0
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._idle)
+        edit.textEdited.connect(self._typed)
+        edit.returnPressed.connect(self._enter)
+
+    def _typed(self, _text: str) -> None:
+        now = time.monotonic()
+        self.fast = self.fast + 1 if (now - self.last) * 1000 <= self.MAX_GAP_MS else 1
+        self.last = now
+        self.timer.start(self.IDLE_MS)
+
+    def _enter(self) -> None:
+        self.timer.stop()
+        self.fast = 0
+
+    def _idle(self) -> None:
+        scanned = self.fast >= self.MIN_CHARS and len(self.edit.text().strip()) >= self.MIN_CHARS
+        self.fast = 0
+        if scanned:
+            self.on_scan()
 
 class TickDelegate(QStyledItemDelegate):
     """Ticked rows get a light green background; column 0 shows the tick box.
@@ -113,6 +165,8 @@ class SearchPrintPage(QWidget):
         self.records: list[dict[str, Any]] = []
         self.search_inputs: dict[str, QLineEdit] = {}
         self.range_inputs: dict[str, tuple[QCheckBox, QDateEdit, QDateEdit]] = {}
+        self.scan_watchers: list[ScanWatcher] = []
+        self.scan_edit: QLineEdit | None = None  # first barcode field of the profile
         self._printing = False
 
         root = QVBoxLayout(self)
@@ -422,6 +476,10 @@ class SearchPrintPage(QWidget):
         self.table.viewport().update()  # TickDelegate repaints boxes and row tint
         self._on_selection()
 
+    def showEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().showEvent(event)
+        QTimer.singleShot(0, self._ready_for_scan)  # open the page and scan straight away
+
     def selected_records(self) -> list[dict[str, Any]]:
         """Rows ticked for printing (in table order)."""
         return [self.records[r] for r in sorted(self.ticked) if r < len(self.records)]
@@ -441,6 +499,8 @@ class SearchPrintPage(QWidget):
         self._clear_grid()
         self.search_inputs.clear()
         self.range_inputs.clear()
+        self.scan_watchers = []
+        self.scan_edit = None
         profile = self.current_profile()
         if not profile:
             return
@@ -451,8 +511,15 @@ class SearchPrintPage(QWidget):
             edit.setPlaceholderText(SEARCH_HINTS.get(fd.search_mode, SEARCH_HINTS["contains"]))
             edit.setToolTip(search_tooltip(fd.search_mode))
             edit.setClearButtonEnabled(True)
+            if fd.replace:
+                edit.textEdited.connect(lambda text, e=edit, rule=fd.replace: _replace_live(e, text, rule))
+            if fd.barcode:
+                edit.setPlaceholderText("scan barcode or type…")
+                self.scan_watchers.append(ScanWatcher(edit, self._search))
+                if self.scan_edit is None:
+                    self.scan_edit = edit
             edit.returnPressed.connect(self._search)
-            self.criteria_grid.addWidget(labeled(fd.label, edit), i // 2, i % 2)
+            self.criteria_grid.addWidget(labeled(fd.label + ("  (scan)" if fd.barcode else ""), edit), i // 2, i % 2)
             self.search_inputs[fd.column] = edit
             i += 1
         row = (i + 1) // 2
@@ -461,6 +528,13 @@ class SearchPrintPage(QWidget):
             row += 1
         self._fill_templates(profile.template_id)
         self._set_records([], searched=False)
+        self._ready_for_scan()
+
+    def _ready_for_scan(self) -> None:
+        """Barcode field focused with its text selected, so the next scan replaces it."""
+        if self.scan_edit is not None and self.isVisible():
+            self.scan_edit.setFocus()
+            self.scan_edit.selectAll()
 
     def _date_range_row(self, column: str) -> QWidget:
         w = QWidget()
@@ -524,6 +598,7 @@ class SearchPrintPage(QWidget):
     def _on_results(self, rows: list[dict[str, Any]]) -> None:
         self._search_done()
         self._set_records(rows, searched=True)
+        self._ready_for_scan()
         profile = self.current_profile()
         if profile and rows and len(rows) >= profile.row_limit:
             self.search_banner.show_message(f"Showing the first {len(rows)} rows. Narrow the search to see others.", "warning")

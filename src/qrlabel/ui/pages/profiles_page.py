@@ -46,9 +46,10 @@ from ..widgets import Banner, Card, chip, labeled, page_header
 from ..workers import error_text, run_async
 
 TYPES = ["string", "int", "decimal", "date"]
-COLS = ["Field", "Header", "Type", "Format", "Search", "Search by", "Date range", "Show", "Required", "Fallback", "From"]
-CHECK_COLS = {4: "searchable", 6: "range_search", 7: "display", 8: "required"}
-MODE_COL, FALLBACK_COL, FROM_COL = 5, 9, 10
+COLS = ["Field", "Header", "Type", "Format", "Search", "Search by", "Barcode", "Replace", "Date range", "Show", "Required",
+        "Fallback", "From"]
+CHECK_COLS = {4: "searchable", 6: "barcode", 8: "range_search", 9: "display", 10: "required"}
+MODE_COL, REPLACE_COL, FALLBACK_COL, FROM_COL = 5, 7, 11, 12
 NO_COMPANY = "__none__"
 TEST_ROWS = 20
 
@@ -460,6 +461,7 @@ class ProfilesPage(QWidget):
         self.fields_chip = chip("", gray=True)
         card.header.addWidget(self.fields_chip)
         hint = QLabel("Header = column title on screen. Search = filter box on Search & Print (in this order; use Move up/down). "
+                      "Barcode = searches right after a scan. "
                       "Fallback = column used when this one is empty (COLUMN or TABLE.COLUMN).")
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
@@ -473,7 +475,7 @@ class ProfilesPage(QWidget):
         self.table.setMinimumHeight(300)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        for col, width in ((1, 170), (2, 118), (3, 90), (MODE_COL, 118), (FALLBACK_COL, 130)):  # editable text / combo columns
+        for col, width in ((1, 170), (2, 118), (3, 90), (MODE_COL, 118), (REPLACE_COL, 70), (FALLBACK_COL, 130)):  # editable text / combo columns
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
             self.table.setColumnWidth(col, width)
         header.setStretchLastSection(True)
@@ -749,6 +751,10 @@ class ProfilesPage(QWidget):
         mode.setEnabled(f.searchable)
         mode.currentIndexChanged.connect(lambda *_: self._changed())
         self.table.setCellWidget(r, MODE_COL, mode)
+        rep = QTableWidgetItem(f.replace)
+        rep.setToolTip("Change characters in typed or scanned values, e.g. +>_ (the scanner sends + instead of _).\n"
+                       "Several: separate with spaces, e.g. +>_ ;>,")
+        self.table.setItem(r, REPLACE_COL, rep)
         self.table.setItem(r, FALLBACK_COL, QTableWidgetItem(f.fallback))
         src = QTableWidgetItem(f.table or "main")
         src.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
@@ -772,6 +778,7 @@ class ProfilesPage(QWidget):
             for col, attr in CHECK_COLS.items():
                 setattr(f, attr, self.table.item(r, col).checkState() == Qt.CheckState.Checked)
             f.search_mode = self.table.cellWidget(r, MODE_COL).currentData() or "contains"
+            f.replace = " ".join((self.table.item(r, REPLACE_COL).text() if self.table.item(r, REPLACE_COL) else "").split())
             f.fallback = (self.table.item(r, FALLBACK_COL).text() if self.table.item(r, FALLBACK_COL) else "").strip().upper()
             out.append(f)
         return out
