@@ -33,7 +33,7 @@ from ...app.context import AppContext
 from ...domain.models import DataProfile, LabelTemplate, PrintStatus, new_id
 from ...rendering.raster import render_label_image
 from ...services.formatting import build_label_values, format_value
-from ...services.query_builder import apply_replace, has_criteria
+from ...services.query_builder import apply_replace, has_criteria, parse_replace
 from ..icons import icon, pixmap
 from ..widgets import Banner, Card, chip, labeled, nice_calendar, page_header, pil_to_pixmap, sticker_pixmap
 from ..workers import error_text, run_async
@@ -49,20 +49,59 @@ SEARCH_HINTS = {
 }
 
 
-def search_tooltip(mode: str) -> str:
-    one = {
-        "contains": "<code>FA-IT-5-26</code> &nbsp;contains this text",
-        "starts": "<code>FA-IT-5-26</code> &nbsp;starts with this text",
-        "exact": "<code>FA-IT-5-26-0001</code> &nbsp;exactly this value",
-    }.get(mode, "")
-    return (
-        "<b>How to search</b><br>" + one + "<br>"
-        "<code>FA-IT-5-26-0001..FA-IT-5-26-0010</code> &nbsp;range (use full numbers)<br>"
-        "<code>FA-IT-5-26-0001, FA-IT-5-26-0005</code> &nbsp;exactly these<br>"
-        "Separate values with comma, semicolon or new line (paste a column from Excel).<br>"
-        "Ranges and single values can be mixed."
-    )
+# Examples shown before the first search (afterwards real values from the results are used).
+FIELD_EXAMPLES: dict[str, tuple[str, str]] = {
+    "ASSETID": ("FA-IT-5-26-0001", "FA-IT-5-26-0010"),
+    "NAME": ("Computer Set", "Notebook"),
+    "TECHINFO1": ("PU2024-001", "PU2024-010"),
+    "PURCHID": ("PO24-00125", "PO24-00130"),
+    "DIMENSION": ("FPRO_MOLD", "FPRO_MIX"),
+    "JOURNALID": ("90959F_072", "90960F_072"),
+    "VOUCHER": ("1901597_074", "1901600_074"),
+    "ITEMID": ("MCAB-BA00", "MCAB-BA09"),
+}
 
+
+def field_examples(fd, values: list[str] | None = None) -> tuple[str, str]:
+    """Two example values for a search field: from search results when known, else built-in or generic."""
+    seen = sorted({str(v).strip() for v in (values or []) if str(v or "").strip()})
+    if len(seen) >= 2:
+        return seen[0], seen[-1]
+    if len(seen) == 1:
+        return seen[0], FIELD_EXAMPLES.get(fd.column.upper(), (seen[0], seen[0]))[1]
+    return FIELD_EXAMPLES.get(fd.column.upper(), ("ABC-001", "ABC-010"))
+
+
+def _part(text: str, mode: str) -> str:
+    """Shortened example for 'starts with' / 'contains'."""
+    keep = max(3, (len(text) * 2) // 3)
+    if mode == "contains" and len(text) > 4:
+        return text[1:keep]
+    return text[:keep]
+
+
+def search_tooltip(fd, values: list[str] | None = None) -> str:
+    from html import escape
+
+    a, b = field_examples(fd, values)
+    lo, hi = sorted([a, b])
+    mode = fd.search_mode
+    one = {
+        "contains": f"<code>{escape(_part(a, mode))}</code> &nbsp;contains this text",
+        "starts": f"<code>{escape(_part(a, mode))}</code> &nbsp;starts with this text",
+        "exact": f"<code>{escape(a)}</code> &nbsp;exactly this value",
+    }.get(mode, "")
+    lines = [f"<b>Search {escape(fd.label)}</b>"]
+    if fd.barcode:
+        rule = ", ".join(f"{escape(x)} becomes {escape(y)}" for x, y in parse_replace(fd.replace))
+        lines.append("Scan the barcode: the search starts by itself." + (f" ({rule})" if rule else ""))
+    lines += [
+        one,
+        f"<code>{escape(lo)}..{escape(hi)}</code> &nbsp;range (use full values)",
+        f"<code>{escape(a)}, {escape(b)}</code> &nbsp;exactly these",
+        "Separate values with comma, semicolon or new line (paste a column from Excel).",
+    ]
+    return "<br>".join(lines)
 
 
 def _replace_live(edit: QLineEdit, text: str, rule: str) -> None:
@@ -509,7 +548,7 @@ class SearchPrintPage(QWidget):
             edit = QLineEdit()
             edit.setMaxLength(5000)
             edit.setPlaceholderText(SEARCH_HINTS.get(fd.search_mode, SEARCH_HINTS["contains"]))
-            edit.setToolTip(search_tooltip(fd.search_mode))
+            edit.setToolTip(search_tooltip(fd))
             edit.setClearButtonEnabled(True)
             if fd.replace:
                 edit.textEdited.connect(lambda text, e=edit, rule=fd.replace: _replace_live(e, text, rule))
@@ -529,6 +568,17 @@ class SearchPrintPage(QWidget):
         self._fill_templates(profile.template_id)
         self._set_records([], searched=False)
         self._ready_for_scan()
+
+    def _update_tooltips(self, rows: list[dict[str, Any]]) -> None:
+        """Use values from the results as examples in each box's tooltip."""
+        profile = self.current_profile()
+        if not profile or not rows:
+            return
+        for fd in profile.searchable_fields:
+            edit = self.search_inputs.get(fd.column)
+            if edit is not None:
+                values = [r.get(fd.column.upper()) for r in rows[:200]]
+                edit.setToolTip(search_tooltip(fd, [v for v in values if isinstance(v, str)]))
 
     def _ready_for_scan(self) -> None:
         """Barcode field focused with its text selected, so the next scan replaces it."""
@@ -598,6 +648,7 @@ class SearchPrintPage(QWidget):
     def _on_results(self, rows: list[dict[str, Any]]) -> None:
         self._search_done()
         self._set_records(rows, searched=True)
+        self._update_tooltips(rows)
         self._ready_for_scan()
         profile = self.current_profile()
         if profile and rows and len(rows) >= profile.row_limit:

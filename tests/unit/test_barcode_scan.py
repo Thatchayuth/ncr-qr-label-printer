@@ -111,3 +111,18 @@ def test_replace_live(qapp):
     edit.setCursorPosition(10)
     _replace_live(edit, edit.text(), "+>_")
     assert edit.text() == "90959F_072" and edit.cursorPosition() == 10
+
+
+def test_tooltips_follow_the_field(qapp, profile):
+    from qrlabel.ui.pages.search_print import search_tooltip
+
+    j = default_journal_profile()
+    journal, item = j.get_field("JOURNALID"), j.get_field("ITEMID")
+    tip = search_tooltip(journal)
+    assert "Search Journal" in tip and "90959F_072" in tip and "FA-IT" not in tip
+    assert "Scan the barcode" in tip and "+ becomes _" in tip
+    tip = search_tooltip(item, ["HW-F005", "AUSU06BSE01", "HW-F005"])
+    assert "AUSU06BSE01..HW-F005" in tip and "FA-IT" not in tip and "Scan" not in tip
+    assert "FA-IT-5-26-0001" in search_tooltip(profile.get_field("ASSETID"))
+    other = search_tooltip(j.get_field("VOUCHER").__class__(column="XYZ", alias="Other", searchable=True))
+    assert "ABC-001" in other
