@@ -59,6 +59,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # Parts of the program (app.modules); "install_modules" = last choice taken over from the installer
     "modules": ["asset", "journal"],
     "install_modules": [],
+    # Automatic updates (services.updater): shared folder with latest.json and the installer
+    "update": {
+        "folder": r"\\ncr230\NCR_Data\General\ICT\NCRPrintLabel",  # test location (2026-10-27)
+        "check_on_start": True,
+    },
     # Menus by Active Directory group of the Windows user (see services.access)
     "access": {
         "admin_groups": ["ICT-RY"],  # see every menu, no admin password needed
@@ -111,6 +116,13 @@ SCHEMA: dict[str, Any] = {
         },
         "modules": {"type": "array", "items": {"enum": ["asset", "journal"]}},
         "install_modules": {"type": "array", "items": {"enum": ["asset", "journal"]}},
+        "update": {
+            "type": "object",
+            "properties": {
+                "folder": {"type": "string", "maxLength": 400},
+                "check_on_start": {"type": "boolean"},
+            },
+        },
         "access": {
             "type": "object",
             "properties": {

@@ -36,9 +36,10 @@ def _installed_sql_drivers() -> list[str]:
 
 
 class SettingsPage(QWidget):
-    def __init__(self, ctx: AppContext, on_saved=None, on_access_changed=None) -> None:
+    def __init__(self, ctx: AppContext, on_saved=None, on_access_changed=None, on_check_updates=None) -> None:
         super().__init__()
         self.ctx = ctx
+        self.on_check_updates = on_check_updates
         self.on_saved = on_saved
         self.on_access_changed = on_access_changed
         root = QVBoxLayout(self)
@@ -106,6 +107,7 @@ class SettingsPage(QWidget):
         card.setMaximumWidth(760)
         root.addWidget(card)
         root.addWidget(self._build_modules_card())
+        root.addWidget(self._build_update_card())
         root.addWidget(self._build_access_card())
         root.addStretch(1)
 
@@ -133,6 +135,7 @@ class SettingsPage(QWidget):
         self.sources.setText(", ".join(self.ctx.config["approved_sources"]))
         self._update_enabled()
         self._load_modules()
+        self._load_update()
         self._load_access()
 
     def _update_enabled(self) -> None:
@@ -260,6 +263,62 @@ class SettingsPage(QWidget):
         self.modules_banner.show_message("Parts saved.", "success")
         if self.on_saved:
             self.on_saved()
+
+    # ------------------------------------------------------------ updates
+
+    def _build_update_card(self) -> Card:
+        card = Card("Updates",
+                    "New versions are taken from a shared folder that holds latest.json and the installer "
+                    "(ICT publishes them with scripts\\publish_update.ps1).")
+        form = QFormLayout()
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(10)
+        self.update_folder = QLineEdit()
+        self.update_folder.setPlaceholderText(r"\\server\share\NCRPrintLabel")
+        self.update_on_start = QCheckBox("Look for a new version when the program starts")
+        form.addRow("Version", QLabel(self.ctx.version))
+        form.addRow("Update folder", self.update_folder)
+        form.addRow("", self.update_on_start)
+        card.body.addLayout(form)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        check = QPushButton("Check now")
+        save = QPushButton("Save")
+        save.setObjectName("Primary")
+        row.addWidget(check)
+        row.addWidget(save)
+        card.body.addLayout(row)
+        self.update_banner = Banner()
+        card.body.addWidget(self.update_banner)
+        card.setMaximumWidth(760)
+        save.clicked.connect(self._save_update)
+        check.clicked.connect(self._check_update)
+        return card
+
+    def _load_update(self) -> None:
+        u = self.ctx.config.get("update", {})
+        self.update_folder.setText(u.get("folder", ""))
+        self.update_on_start.setChecked(bool(u.get("check_on_start", True)))
+
+    def _save_update(self) -> bool:
+        new = copy.deepcopy(self.ctx.config)
+        new["update"] = {"folder": self.update_folder.text().strip(), "check_on_start": self.update_on_start.isChecked()}
+        try:
+            self.ctx.config_service.save(new)
+        except Exception as e:
+            self.update_banner.show_message(error_text(e), "error")
+            return False
+        self.ctx.config = new
+        self.update_banner.show_message("Update settings saved.", "success")
+        return True
+
+    def _check_update(self) -> None:
+        if self.update_folder.text().strip() != self.ctx.config.get("update", {}).get("folder", ""):
+            if not self._save_update():
+                return
+        self.update_banner.show_message("Looking for a new version...", "info")
+        if self.on_check_updates:
+            self.on_check_updates(report=self.update_banner.show_message)
 
     # ------------------------------------------------------------ access
 

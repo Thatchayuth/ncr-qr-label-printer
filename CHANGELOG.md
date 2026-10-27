@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.9.1 (2026-10-27)
+
+- Automatic updates from a shared folder (no database). Test folder: `\\ncr230\NCR_Data\General\ICT\NCRPrintLabel`.
+  - On start the program reads `latest.json` in the folder. When a newer version is there, a bar at the top offers it, with notes. `"required": true` hides "Later".
+  - "Update now" copies the installer to the local data folder and checks its SHA-256 against latest.json (a changed or damaged file is refused). The program then closes, the installer runs silently, and the program opens again. Settings, history, designs and the chosen parts are kept.
+  - It refuses to update while labels are printing, when the program runs from source, or when it is installed for all users and the Windows account cannot write to it.
+  - Application Settings → Updates: folder, "check on start", "Check now".
+  - ICT publishes with `scripts\publish_update.ps1 -Notes "..." [-Required]`. It copies the installer, verifies it, and writes latest.json last. It refuses to publish a version that is not newer.
+
+## Unreleased (before 0.9.1)
 
 - Phase 9: choose the parts of the program when installing.
   - The installer asks "Use the program for": **Asset labels** and/or **Stock labels (inventory transfer journal)**. At least one is required. Silent install: `/TASKS="modasset,modjournal"`.

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QFrame,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QStackedWidget,
@@ -25,7 +27,8 @@ from PySide6.QtWidgets import (
 from ..app.context import AppContext
 from ..app.paths import resource_path
 from .admin_gate import AdminGate
-from .workers import error_text
+from .update_bar import UpdateBar
+from .workers import error_text, run_async
 from .company_switcher import CompanySwitcher
 from .icons import icon, pixmap
 from .pages.designer_page import DesignerPage
@@ -56,9 +59,16 @@ class MainWindow(QMainWindow):
         outer.setSpacing(0)
         self.setCentralWidget(central)
         outer.addWidget(self._build_sidebar())
+        right = QVBoxLayout()
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(0)
+        self.update_bar = UpdateBar()
+        self.update_bar.update_clicked.connect(self.start_update)
+        right.addWidget(self.update_bar)
         self.stack = QStackedWidget()
         self.stack.setObjectName("MainStack")
-        outer.addWidget(self.stack, 1)
+        right.addWidget(self.stack, 1)
+        outer.addLayout(right, 1)
 
         self.search_page = SearchPrintPage(ctx)
         sections = [
@@ -77,7 +87,8 @@ class MainWindow(QMainWindow):
             ("SYSTEM", [
                 ("printer", "Printer Settings", "printer", PrinterPage(ctx, on_saved=self._settings_changed)),
                 ("settings", "Application Settings", "sliders", AdminGate(
-                    ctx, SettingsPage(ctx, on_saved=self._settings_changed, on_access_changed=self.access_settings_changed),
+                    ctx, SettingsPage(ctx, on_saved=self._settings_changed, on_access_changed=self.access_settings_changed,
+                                 on_check_updates=self.check_updates),
                     "Application Settings", "Connection to the Dynamics AX 4.0 SQL Server (read-only).",
                 )),
                 ("diagnostics", "Diagnostics", "activity", DiagnosticsPage(ctx)),
@@ -113,6 +124,8 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(1)
         self.apply_access()
         self._settings_changed()
+        if ctx.config.get("update", {}).get("check_on_start", True):
+            QTimer.singleShot(2500, self.check_updates)  # after the window is up; never blocks start
 
     def _build_sidebar(self) -> QFrame:
         sidebar = QFrame()
@@ -208,6 +221,70 @@ class MainWindow(QMainWindow):
             if self.pages[index][0] == name:
                 self.nav.setCurrentRow(row)
                 return
+
+    # ------------------------------------------------------------ updates
+
+    def check_updates(self, report=None) -> None:
+        """Look for a newer version in the update folder. report(text, level) shows the result (Settings)."""
+        from ..services.updater import check_for_update
+
+        folder = self.ctx.config.get("update", {}).get("folder", "")
+        if not folder.strip():
+            if report:
+                report("Set the update folder first.", "warning")
+            return
+
+        def found(info) -> None:
+            if info is None:
+                if report:
+                    report(f"This is the newest version ({self.ctx.version}).", "success")
+                return
+            self.update_bar.show_update(info, self.ctx.version)
+            if report:
+                report(f"Version {info.version} is available: use the bar at the top of the window.", "info")
+
+        def failed(e: Exception) -> None:
+            logging.getLogger(__name__).warning("Update check failed: %s", e)
+            if report:
+                report(error_text(e), "error")
+
+        run_async(lambda: check_for_update(folder, self.ctx.version), found, failed)
+
+    def start_update(self, info) -> None:
+        from ..app.paths import app_data_dir
+        from ..services.updater import can_install_here, download, start_installer_after_exit
+
+        ok, why = can_install_here()
+        if not ok:
+            self.update_bar.show_error(why)
+            return
+        if getattr(self.search_page, "_printing", False):
+            self.update_bar.show_error("Labels are being printed. Update when printing has finished.")
+            return
+        answer = QMessageBox.question(
+            self, "Update NCR Print Label",
+            f"NCR Print Label will close, install version {info.version} and open again (about a minute).\n\n"
+            "Settings, print history and label designs are kept. Continue?",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        folder = self.ctx.config["update"]["folder"]
+        self.update_bar.show_busy(f"Copying version {info.version} from the update folder...")
+
+        def ready(installer) -> None:
+            import os
+
+            try:
+                start_installer_after_exit(installer, os.getpid())
+            except Exception as e:
+                self.update_bar.show_error(f"Cannot start the installer: {e}")
+                return
+            logging.getLogger(__name__).info("Closing for the update to %s", info.version)
+            self.update_bar.show_busy("Installing... the program opens again when it is done.")
+            QTimer.singleShot(300, QApplication.instance().quit)
+
+        run_async(lambda: download(info, folder, app_data_dir() / "updates"), ready,
+                  lambda e: self.update_bar.show_error(error_text(e)))
 
     # ------------------------------------------------------------ access
 
