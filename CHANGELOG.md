@@ -4,7 +4,7 @@
 
 - Fixed QR size: a QR element can use a fixed QR version, so every label has the same QR size (it grows only when the data does not fit, with a warning). The Label Designer lists each version with its printed size and byte capacity. Fixed sizes always print as bitmap.
 
-- Search results have a tick column. Clicking a row ticks or unticks it, so many labels can be picked without Ctrl, and the ✓ header ticks or unticks all. The preview shows the row clicked last.
+- Search results have a tick column, and only the tick box decides what is printed. Clicking a row only previews it. Ticked rows are tinted green. Space ticks the highlighted row, and the ✓ header, Tick all and Untick all work on every row.
 
 - Data Profiles editor (admin password required):
   - Create, duplicate, import, export and version data profiles.

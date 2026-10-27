@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import QDate, QModelIndex, QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QStandardItem, QStandardItemModel
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPen, QShortcut, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
@@ -40,12 +40,24 @@ PREVIEW_W, PREVIEW_H = 360, 270
 
 
 class TickDelegate(QStyledItemDelegate):
-    """Draws a tick box that mirrors whether the row is selected (selection = labels to print)."""
+    """Ticked rows get a light green background; column 0 shows the tick box.
+
+    Ticks (labels to print) are separate from the highlighted row (label preview).
+    """
+
+    TINT = QColor("#ECFDF5")
+
+    def __init__(self, view, is_ticked) -> None:
+        super().__init__(view)
+        self._is_ticked = is_ticked
 
     def paint(self, painter: QPainter, option, index) -> None:
+        ticked = self._is_ticked(index.row())
+        if ticked:
+            painter.fillRect(option.rect, self.TINT)
         super().paint(painter, option, index)
-        view = self.parent()
-        ticked = view.selectionModel().isRowSelected(index.row(), QModelIndex())
+        if index.column() != 0:
+            return
         r = option.rect
         box = QRectF(r.center().x() - 8, r.center().y() - 8, 16, 16)
         painter.save()
@@ -111,8 +123,11 @@ class SearchPrintPage(QWidget):
         self.search_btn.clicked.connect(self._search)
         self.clear_btn.clicked.connect(self._clear_criteria)
         self.table.selectionModel().selectionChanged.connect(lambda *_: self._on_selection())
-        self.select_all_btn.clicked.connect(self.table.selectAll)
-        self.clear_sel_btn.clicked.connect(self.table.clearSelection)
+        self.select_all_btn.clicked.connect(lambda: self._set_ticks(set(range(len(self.records)))))
+        self.clear_sel_btn.clicked.connect(lambda: self._set_ticks(set()))
+        tick_key = QShortcut(QKeySequence(Qt.Key.Key_Space), self.table)
+        tick_key.setContext(Qt.ShortcutContext.WidgetShortcut)
+        tick_key.activated.connect(lambda: self._toggle_tick(self.table.currentIndex().row()))
         self.print_btn.clicked.connect(self._print)
         self.reload()
 
@@ -165,9 +180,9 @@ class SearchPrintPage(QWidget):
         self.count_chip = chip("0")
         self.count_chip.hide()
         card.header.insertWidget(1, self.count_chip)
-        self.select_all_btn = QPushButton("Select all")
+        self.select_all_btn = QPushButton("Tick all")
         self.select_all_btn.setObjectName("Ghost")
-        self.clear_sel_btn = QPushButton("Clear selection")
+        self.clear_sel_btn = QPushButton("Untick all")
         self.clear_sel_btn.setObjectName("Ghost")
         card.header.addWidget(self.select_all_btn)
         card.header.addWidget(self.clear_sel_btn)
@@ -176,10 +191,12 @@ class SearchPrintPage(QWidget):
         self.table = QTableView()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        # MultiSelection: a click ticks / unticks a row without Ctrl, so many labels can be picked
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
-        self.table.setItemDelegateForColumn(0, TickDelegate(self.table))
+        # Clicking a row only highlights it for the preview; only the tick box decides what is printed
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.table.setItemDelegate(TickDelegate(self.table, lambda row: row in self.ticked))
         self.table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
+        self.table.clicked.connect(self._on_cell_clicked)
+        self.ticked: set[int] = set()  # row numbers ticked for printing
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
@@ -367,14 +384,25 @@ class SearchPrintPage(QWidget):
     def _on_header_clicked(self, section: int) -> None:
         if section != 0 or not self.records:
             return
-        if len(self.selected_records()) == len(self.records):
-            self.table.clearSelection()
-        else:
-            self.table.selectAll()
+        everything = set(range(len(self.records)))
+        self._set_ticks(set() if self.ticked == everything else everything)
+
+    def _on_cell_clicked(self, index) -> None:
+        if index.column() == 0:  # only the tick box column ticks
+            self._toggle_tick(index.row())
+
+    def _toggle_tick(self, row: int) -> None:
+        if 0 <= row < len(self.records):
+            self._set_ticks(self.ticked ^ {row})
+
+    def _set_ticks(self, rows: set[int]) -> None:
+        self.ticked = {r for r in rows if 0 <= r < len(self.records)}
+        self.table.viewport().update()  # TickDelegate repaints boxes and row tint
+        self._on_selection()
 
     def selected_records(self) -> list[dict[str, Any]]:
-        rows = sorted({i.row() for i in self.table.selectionModel().selectedRows()})
-        return [self.records[r] for r in rows if r < len(self.records)]
+        """Rows ticked for printing (in table order)."""
+        return [self.records[r] for r in sorted(self.ticked) if r < len(self.records)]
 
     # ----------------------------------------------------------------- search
 
@@ -490,6 +518,7 @@ class SearchPrintPage(QWidget):
 
     def _set_records(self, rows: list[dict[str, Any]], searched: bool) -> None:
         self.records = rows
+        self.ticked = set()  # a new search starts with nothing ticked
         profile = self.current_profile()
         self.model.clear()
         if profile:
@@ -535,8 +564,8 @@ class SearchPrintPage(QWidget):
     def _on_selection(self) -> None:
         n = len(self.selected_records())
         self.selection_label.setText(
-            f"{n} of {len(self.records)} ticked for printing  ·  click a row to tick / untick" if n
-            else "Click rows to tick the labels to print · click the tick column header to tick all"
+            f"{n} of {len(self.records)} ticked for printing  ·  click a row to preview it" if n
+            else "Tick the boxes ☐ of the labels to print (Space ticks the highlighted row) · click a row to preview it"
         )
         self.print_btn.setEnabled(n > 0 and not self._printing)
         if not self._printing:
@@ -554,9 +583,8 @@ class SearchPrintPage(QWidget):
         self.size_chip.setToolTip(f"Gap {template.gap_mm:g} mm, {template.dpi} dpi")
         selected = self.selected_records()
         current = self.table.currentIndex().row()
-        sel_model = self.table.selectionModel()
-        if 0 <= current < len(self.records) and sel_model.isRowSelected(current, QModelIndex()):
-            record = self.records[current]  # the row clicked last
+        if 0 <= current < len(self.records):
+            record = self.records[current]  # the highlighted row (clicked last)
         else:
             record = selected[0] if selected else None
         self.preview_banner.clear_message()
