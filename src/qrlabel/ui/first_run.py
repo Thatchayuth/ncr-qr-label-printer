@@ -29,10 +29,9 @@ from ..infrastructure.printing.adapters import (
     MockPrinterAdapter,
     WindowsSharedPrinterAdapter,
     WindowsSpoolerAdapter,
-    default_windows_printer,
-    list_windows_printers,
 )
 from .pages.settings_page import _installed_sql_drivers
+from .printer_picker import PrinterPicker
 from .widgets import Banner
 from .workers import error_text, run_async
 
@@ -199,26 +198,20 @@ class PrinterPage(QWizardPage):
         super().__init__()
         self.ctx = ctx
         self.setTitle("Label printer")
-        self.setSubTitle("TSC TE200 on USB at the main PC, or the printer shared from the main PC.")
+        self.setSubTitle("TSC label printer on USB at the main PC, or the printer shared from the main PC.")
         lay = QVBoxLayout(self)
         f = QFormLayout()
         self.adapter = QComboBox()
-        self.adapter.addItem("TE200 on this PC (USB)", "spooler")
+        self.adapter.addItem("Label printer on this PC (TSC on USB)", "spooler")
         self.adapter.addItem("Shared printer on the main PC", "shared")
         self.adapter.addItem("No printer yet - save .prn files", "mock")
-        self.printer = QComboBox()
-        self.printer.setEditable(True)
-        try:
-            names = list_windows_printers()
-        except Exception:
-            names = []
-        self.printer.addItems(names)
-        tsc = next((n for n in names if "TSC" in n.upper() or "TE200" in n.upper()), "")
-        self.printer.setCurrentText(ctx.config["printer"].get("printer_name") or tsc or default_windows_printer())
+        self.printer = PrinterPicker()
+        self.printer.refresh(ctx.config["printer"].get("printer_name", ""))
+        tsc = next((p.name for p in self.printer.printers if p.is_label_printer), "")
         self.shared = QLineEdit(ctx.config["printer"].get("shared_path", ""))
-        self.shared.setPlaceholderText(r"\\MAIN-PC\TSC_TE200")
+        self.shared.setPlaceholderText(r"\\MAIN-PC\TSC_TE210")
         f.addRow("Print to", self.adapter)
-        f.addRow("Windows printer", self.printer)
+        f.addRow("Printer", self.printer)
         f.addRow("Shared path", self.shared)
         self.form = f
         lay.addLayout(f)
@@ -250,7 +243,7 @@ class PrinterPage(QWizardPage):
     def _build(self):
         kind = self.adapter.currentData()
         if kind == "spooler":
-            return WindowsSpoolerAdapter(self.printer.currentText().strip())
+            return WindowsSpoolerAdapter(self.printer.current_name())
         if kind == "shared":
             return WindowsSharedPrinterAdapter(self.shared.text().strip())
         return MockPrinterAdapter(paths.mock_output_dir())
@@ -297,7 +290,7 @@ class PrinterPage(QWizardPage):
             self.banner.show_message(error_text(e), "error")
             return False
         p = self.ctx.config["printer"]
-        p.update(adapter=self.adapter.currentData(), printer_name=self.printer.currentText().strip(),
+        p.update(adapter=self.adapter.currentData(), printer_name=self.printer.current_name(),
                  shared_path=self.shared.text().strip())
         return True
 

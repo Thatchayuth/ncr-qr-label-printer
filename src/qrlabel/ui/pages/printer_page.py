@@ -23,28 +23,27 @@ from ...infrastructure.printing.adapters import (
     TcpPrinterAdapter,
     WindowsSharedPrinterAdapter,
     WindowsSpoolerAdapter,
-    default_windows_printer,
-    list_windows_printers,
 )
+from ..printer_picker import PrinterPicker
 from ..widgets import Banner, Card, page_header
 from ..workers import error_text, run_async
 
 ADAPTERS = [
     ("Sample printer - save .prn files (no printer needed)", "mock"),
-    ("Windows printer on this PC (TE200 on USB)", "spooler"),
+    ("Label printer on this PC (TSC on USB)", "spooler"),
     ("Shared printer on another PC (\\\\HOST\\Share)", "shared"),
     ("Network print server - RAW TCP 9100 (optional)", "tcp"),
 ]
 
 CALIBRATION_TEXT = (
     "<b>Before the first print</b><ol style='margin-left:-20px'>"
-    "<li>Install the TSC TE200 Windows driver on the PC the printer is plugged into.</li>"
+    "<li>Install the TSC Windows driver (TE200 / TE210) on the PC the printer is plugged into.</li>"
     "<li>Load the sticker roll and run the printer's gap-sensor calibration "
-    "(TSC Diagnostic Tool &rarr; Calibrate Sensor, or the procedure in the TE200 user manual).</li>"
+    "(TSC Diagnostic Tool &rarr; Calibrate Sensor, or the procedure in the printer user manual).</li>"
     "<li>Set the label size in the Label Designer to the measured sticker size and gap.</li>"
     "<li>Use <b>Test print</b> here and scan the QR code with a phone or scanner.</li>"
     "</ol>"
-    "<b>Other PCs</b> print through the main PC: share the TE200 in Windows on the main PC, "
+    "<b>Other PCs</b> print through the main PC: share the TSC printer in Windows on the main PC, "
     "then choose <i>Shared printer</i> here and enter <code>\\\\MAIN-PC\\ShareName</code>."
 )
 
@@ -57,7 +56,7 @@ class PrinterPage(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 28, 32, 28)
         root.setSpacing(16)
-        root.addWidget(page_header("Printer Settings", "TSC TE200 - 203 dpi - TSPL. Data is sent RAW (no driver rendering)."))
+        root.addWidget(page_header("Printer Settings", "TSC TE200 / TE210 - 203 dpi - TSPL. Data is sent RAW (no driver rendering)."))
 
         row = QHBoxLayout()
         row.setSpacing(16)
@@ -70,16 +69,7 @@ class PrinterPage(QWidget):
         self.adapter = QComboBox()
         for label, key in ADAPTERS:
             self.adapter.addItem(label, key)
-        printer_row = QHBoxLayout()
-        self.printer = QComboBox()
-        self.printer.setEditable(True)
-        self.printer.setMinimumWidth(260)
-        refresh = QPushButton("Refresh")
-        printer_row.addWidget(self.printer, 1)
-        printer_row.addWidget(refresh)
-        self.printer_row_w = QWidget()
-        self.printer_row_w.setLayout(printer_row)
-        printer_row.setContentsMargins(0, 0, 0, 0)
+        self.printer_row_w = PrinterPicker()
         self.shared = QLineEdit()
         self.shared.setPlaceholderText(r"\\MAIN-PC\TSC_TE200")
         self.tcp_host = QLineEdit()
@@ -89,7 +79,7 @@ class PrinterPage(QWidget):
         self.mock_info.setObjectName("Muted")
         self.mock_info.setWordWrap(True)
         form.addRow("Print to", self.adapter)
-        form.addRow("Windows printer", self.printer_row_w)
+        form.addRow("Printer", self.printer_row_w)
         form.addRow("Shared path", self.shared)
         form.addRow("Print server host", self.tcp_host)
         form.addRow("Port", self.tcp_port)
@@ -120,30 +110,23 @@ class PrinterPage(QWidget):
         root.addStretch(1)
 
         self.adapter.currentIndexChanged.connect(self._update_rows)
-        refresh.clicked.connect(self._refresh_printers)
         self.test_btn.clicked.connect(self._test)
         self.test_print_btn.clicked.connect(self._test_print)
         self.save_btn.clicked.connect(self._save)
-        self._refresh_printers()
         self.load()
 
     def load(self) -> None:
         p = self.ctx.config["printer"]
         self.adapter.setCurrentIndex(max(0, self.adapter.findData(p["adapter"])))
-        self.printer.setCurrentText(p.get("printer_name", "") or default_windows_printer())
+        self.printer_row_w.refresh(p.get("printer_name", ""))
         self.shared.setText(p.get("shared_path", ""))
         self.tcp_host.setText(p.get("tcp_host", ""))
         self.tcp_port.setValue(int(p.get("tcp_port", 9100)))
         self._update_rows()
 
-    def _refresh_printers(self) -> None:
-        current = self.printer.currentText()
-        self.printer.clear()
-        try:
-            self.printer.addItems(list_windows_printers())
-        except Exception as e:
-            self.banner.show_message(f"Cannot list printers: {e}", "error")
-        self.printer.setCurrentText(current)
+    def reload(self) -> None:
+        """Called when the page is opened: pick up printers plugged in since the last visit."""
+        self.printer_row_w.refresh(self.printer_row_w.current_name() or self.ctx.config["printer"].get("printer_name", ""))
 
     def _update_rows(self) -> None:
         kind = self.adapter.currentData()
@@ -160,7 +143,7 @@ class PrinterPage(QWidget):
     def _form_printer(self) -> dict:
         p = copy.deepcopy(self.ctx.config["printer"])
         p.update(
-            adapter=self.adapter.currentData(), printer_name=self.printer.currentText().strip(),
+            adapter=self.adapter.currentData(), printer_name=self.printer_row_w.current_name(),
             shared_path=self.shared.text().strip(), tcp_host=self.tcp_host.text().strip(), tcp_port=self.tcp_port.value(),
         )
         return p

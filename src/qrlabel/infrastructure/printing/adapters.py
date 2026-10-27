@@ -61,6 +61,45 @@ def describe_printer_status(status: int, attributes: int = 0) -> list[str]:
     return problems
 
 
+_VIRTUAL_PORTS = {"PORTPROMPT:", "NUL:", "FILE:", "SHRFAX:", "XPSPORT:"}
+_VIRTUAL_HINTS = ("onenote", "print to pdf", "xps document writer", "fax", "pdf", "software printer driver")
+_LABEL_BRANDS = ("tsc", "zebra", "godex", "argox", "honeywell", "bixolon", "sato", "citizen", "datamax", "intermec")
+
+
+@dataclass(frozen=True)
+class PrinterInfo:
+    name: str
+    driver: str = ""
+    port: str = ""
+
+    @property
+    def is_label_printer(self) -> bool:
+        text = f"{self.name} {self.driver}".lower()
+        return any(text.startswith(b) or f" {b}" in text for b in _LABEL_BRANDS)
+
+
+def is_virtual_printer(name: str, driver: str, port: str) -> bool:
+    """PDF / XPS / OneNote / Fax and other 'printers' that are not a device."""
+    port_u = (port or "").strip().upper()
+    if port_u in _VIRTUAL_PORTS or port_u.startswith("MICROSOFT.OFFICE.ONENOTE"):
+        return True
+    text = f"{name} {driver}".lower()
+    return any(h in text for h in _VIRTUAL_HINTS)
+
+
+def list_physical_printers() -> list[PrinterInfo]:
+    """Real printers only, label printers first."""
+    import win32print
+
+    flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+    found: dict[str, PrinterInfo] = {}
+    for p in win32print.EnumPrinters(flags, None, 2):
+        info = PrinterInfo(p.get("pPrinterName", ""), p.get("pDriverName", "") or "", p.get("pPortName", "") or "")
+        if info.name and not is_virtual_printer(info.name, info.driver, info.port):
+            found[info.name] = info
+    return sorted(found.values(), key=lambda i: (not i.is_label_printer, i.name.lower()))
+
+
 def list_windows_printers() -> list[str]:
     import win32print
 

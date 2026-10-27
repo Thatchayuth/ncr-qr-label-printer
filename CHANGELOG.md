@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Printer choice is now a drop-down of real printers only. PDF, XPS, OneNote and Fax are hidden, label printers (TSC, Zebra, …) are listed first, and other printers show a warning. The same drop-down is used in Printer Settings and the setup wizard.
+- Supports TSC TE210 (203 dpi, same as TE200; confirmed from the Windows driver).
+
 - The installer ships the label template "New label" (38.1 × 38.1 mm, from v14 on the design PC). A new installation uses it as the default template for the Asset profile.
 
 - Label Designer: Image element for logos/pictures (PNG/JPG/BMP/GIF; stored in the template; fitted with aspect ratio; black/white or dithered), Alt+6.
