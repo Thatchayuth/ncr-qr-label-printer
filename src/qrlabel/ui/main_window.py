@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from ..app.context import AppContext
 from ..app.paths import resource_path
 from .admin_gate import AdminGate
+from .company_switcher import CompanySwitcher
 from .icons import icon, pixmap
 from .pages.designer_page import DesignerPage
 from .pages.history_page import HistoryPage
@@ -154,6 +155,11 @@ class MainWindow(QMainWindow):
         badge_row.addWidget(self.mode_badge)
         badge_row.addStretch(1)
         foot.addLayout(badge_row)
+        self.company = CompanySwitcher(
+            self.ctx, lambda: self.search_page.current_profile() if hasattr(self, "search_page") else None
+        )
+        self.company.changed.connect(self._company_changed)
+        foot.addWidget(self.company)
         try:
             user = getpass.getuser()
         except Exception:
@@ -185,6 +191,9 @@ class MainWindow(QMainWindow):
                 self.nav.setCurrentRow(row)
                 return
 
+    def _company_changed(self, cid: str) -> None:
+        self.search_page.on_company_changed(cid, self.company.name_of(cid))
+
     def refresh_after_setup(self) -> None:
         """Re-read settings changed by the first-run wizard."""
         for _, page in self.pages:
@@ -204,3 +213,6 @@ class MainWindow(QMainWindow):
         self.mode_badge.style().unpolish(self.mode_badge)
         self.mode_badge.style().polish(self.mode_badge)
         self.search_page.reload()
+        self.company.companies = []  # database may have changed: read the list again
+        self.company.refresh_text()
+        self.company.load()

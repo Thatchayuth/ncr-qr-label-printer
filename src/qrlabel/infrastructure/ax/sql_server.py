@@ -12,7 +12,7 @@ from typing import Any
 
 from ...domain.errors import DataSourceError, ValidationError
 from ...domain.models import DataProfile
-from ...services.query_builder import build_select
+from ...services.query_builder import build_select, quote_ident
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +112,28 @@ class SqlServerDataSource:
                 "ORDER BY TABLE_NAME"
             ).fetchall()
         return [(r[0], r[1], "VIEW" if r[2] == "VIEW" else "TABLE") for r in rows]
+
+    def list_companies(self, profile: DataProfile | None = None) -> list[tuple[str, str, int | None]]:
+        """Companies (DATAAREAID, name, rows in the profile's source). Virtual companies are left out."""
+        names: dict[str, str] = {}
+        counts: dict[str, int] = {}
+        with self._connect() as conn:
+            cur = conn.cursor()
+            try:  # AX system table with company names (fixed read-only query, no user input)
+                for cid, name in cur.execute("SELECT ID, NAME FROM dbo.DATAAREA WHERE ISVIRTUAL = 0 ORDER BY ID").fetchall():
+                    names[str(cid).strip().lower()] = str(name or "").strip()
+            except Exception as e:  # not an AX database or no read right: counts are enough
+                log.info("DATAAREA not readable: %s", e)
+            if profile is not None and profile.dataarea_column:
+                if profile.source.upper() not in {s.upper() for s in self.approved_sources}:
+                    raise ValidationError(f"Source '{profile.source}' is not in the approved source list.")
+                col = quote_ident(profile.dataarea_column)
+                sql = f"SELECT {col}, COUNT(*) FROM {quote_ident(profile.schema)}.{quote_ident(profile.source)} GROUP BY {col}"
+                for cid, n in cur.execute(sql).fetchall():
+                    counts[str(cid).strip().lower()] = int(n)
+        ids = sorted(set(names) | set(counts))
+        with_counts = profile is not None and bool(profile.dataarea_column)
+        return [(cid, names.get(cid, ""), counts.get(cid, 0) if with_counts else None) for cid in ids]
 
     def forget_columns(self) -> None:
         self._columns_cache.clear()

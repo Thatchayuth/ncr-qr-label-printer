@@ -19,6 +19,15 @@ QListWidget#Nav::item:hover:!selected { background: #1E293B; color: #F8FAFC; }
 QListWidget#Nav::item:selected { background: #2563EB; color: #FFFFFF; font-weight: 600; }
 QLabel#SideFooter { color: #64748B; font-size: 8.5pt; }
 QLabel#ModeMock { background: #422006; color: #FBBF24; border-radius: 10px; padding: 4px 10px; font-weight: 700; font-size: 8.5pt; }
+QPushButton#CompanyButton { background: #1E293B; color: #E2E8F0; border: 1px solid #334155; border-radius: 8px;
+                            padding: 7px 10px; text-align: left; font-weight: 600; }
+QPushButton#CompanyButton:hover { background: #273449; border-color: #475569; }
+QPushButton#CompanyButton:pressed { background: #334155; }
+QMenu#CompanyMenu { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 4px; }
+QMenu#CompanyMenu::item { padding: 7px 26px 7px 26px; border-radius: 6px; color: #0F172A; }
+QMenu#CompanyMenu::item:selected { background: #EFF6FF; }
+QMenu#CompanyMenu::item:disabled { color: #64748B; }
+QMenu#CompanyMenu::separator { height: 1px; background: #E2E8F0; margin: 4px 6px; }
 QLabel#ModeLive { background: #052E16; color: #4ADE80; border-radius: 10px; padding: 4px 10px; font-weight: 700; font-size: 8.5pt; }
 
 /* ------------------------------------------------------------------ cards */

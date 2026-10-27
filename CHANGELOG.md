@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Company (DATAAREAID) moved from the search form to the sidebar, under the AX LIVE badge. Click it to pick a company from AX: names come from DATAAREA, virtual companies are hidden, and each shows its number of assets. The choice is saved, and changing it clears the old results.
+
 - Redesigned date picker: all day numbers visible, weekday header, chevron navigation, rounded blue selected day, today in bold blue, weekends in red, other months greyed.
 
 - Fixed QR size: a QR element can use a fixed QR version, so every label has the same QR size (it grows only when the data does not fit, with a warning). The Label Designer lists each version with its printed size and byte capacity. Fixed sizes always print as bitmap.

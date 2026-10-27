@@ -352,7 +352,7 @@ class QrConfigPage(QWidget):
             return
         key = p.fields[0].column
         value = self.test_id.text().strip()
-        company = self.ctx.config["database"].get("company", "") or "smp"
+        company = self.ctx.company
         self.load_btn.setEnabled(False)
 
         def work():

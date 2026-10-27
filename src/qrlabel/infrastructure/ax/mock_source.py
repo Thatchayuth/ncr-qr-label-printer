@@ -53,6 +53,9 @@ class MockDataSource:
     def forget_columns(self) -> None:
         pass
 
+    def list_companies(self, profile: DataProfile | None = None) -> list[tuple[str, str, int | None]]:
+        return [(MOCK_COMPANY, "Sample company", len(self.rows))]
+
     def list_columns(self, source: str, schema: str = "dbo") -> list[tuple[str, str]]:
         if source.upper() not in self.approved:
             raise ValidationError(f"Source '{source}' is not approved.")

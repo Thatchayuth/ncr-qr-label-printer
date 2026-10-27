@@ -72,6 +72,21 @@ class AppContext:
     def using_mock_data(self) -> bool:
         return bool(self.config["database"]["use_mock"])
 
+    @property
+    def company(self) -> str:
+        """Active company (DATAAREAID) for searches; chosen in the sidebar."""
+        company = self.config["database"].get("company", "")
+        if not company and self.using_mock_data:
+            from ..infrastructure.ax.mock_source import MOCK_COMPANY
+
+            return MOCK_COMPANY
+        return company
+
+    def set_company(self, company: str) -> None:
+        self.config["database"]["company"] = company.strip().lower()[:8]
+        self.save_config()
+        log.info("Active company set to %s", self.config["database"]["company"])
+
     def data_source(self):
         approved = self.config["approved_sources"]
         if self.using_mock_data:

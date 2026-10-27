@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
 
 from ...app.context import AppContext
 from ...domain.models import DataProfile, LabelTemplate, PrintStatus, new_id
-from ...infrastructure.ax.mock_source import MOCK_COMPANY
 from ...rendering.raster import render_label_image
 from ...services.formatting import build_label_values, format_value
 from ..icons import icon, pixmap
@@ -136,17 +135,8 @@ class SearchPrintPage(QWidget):
     def _build_search_card(self) -> Card:
         card = Card("Search")
         self.profile_combo = QComboBox()
-        self.company_edit = QLineEdit()
-        self.company_edit.setMaxLength(8)
-        self.company_edit.setPlaceholderText("e.g. db1")
-        top = QGridLayout()
-        top.setHorizontalSpacing(14)
-        top.setVerticalSpacing(12)
-        top.addWidget(labeled("Data profile", self.profile_combo), 0, 0)
-        top.addWidget(labeled("Company (DATAAREAID)", self.company_edit), 0, 1)
-        top.setColumnStretch(0, 1)
-        top.setColumnStretch(1, 1)
-        card.body.addLayout(top)
+        # the company (DATAAREAID) is chosen in the sidebar, not here
+        card.body.addWidget(labeled("Data profile", self.profile_combo))
 
         self.criteria_grid = QGridLayout()
         self.criteria_grid.setHorizontalSpacing(14)
@@ -331,11 +321,6 @@ class SearchPrintPage(QWidget):
             self.template_combo.addItem(icon("qr", "#64748B"), f"{t.name}  (v{t.version})", t.id)
         self.template_combo.blockSignals(False)
 
-        company = self.ctx.config["database"].get("company", "")
-        if self.ctx.using_mock_data and not company:
-            company = MOCK_COMPANY
-        if not self.company_edit.text():
-            self.company_edit.setText(company)
         self.copies_spin.setValue(int(ui.get("copies", 1)))
         self._refresh_printer_label()
         self._on_profile_changed()
@@ -380,6 +365,14 @@ class SearchPrintPage(QWidget):
     def current_template(self) -> LabelTemplate | None:
         tid = self.template_combo.currentData()
         return next((t for t in self.templates if t.id == tid), None)
+
+    def on_company_changed(self, cid: str, name: str = "") -> None:
+        """Results belong to the previous company: clear them."""
+        had_results = bool(self.records)
+        self._set_records([], searched=False)
+        label = cid.upper() + (f" ({name})" if name else "")
+        msg = f"Company changed to {label}." + (" Press Search to load its assets." if had_results else "")
+        self.search_banner.show_message(msg, "info")
 
     def _on_header_clicked(self, section: int) -> None:
         if section != 0 or not self.records:
@@ -444,7 +437,6 @@ class SearchPrintPage(QWidget):
         for fd in profile.range_fields:
             self.criteria_grid.addWidget(labeled(fd.label, self._date_range_row(fd.column)), row, 0, 1, 2)
             row += 1
-        self.company_edit.setEnabled(bool(profile.dataarea_column))
         tidx = self.template_combo.findData(profile.template_id)
         if tidx >= 0:
             self.template_combo.setCurrentIndex(tidx)
@@ -495,7 +487,7 @@ class SearchPrintPage(QWidget):
             return
         criteria = {col: e.text() for col, e in self.search_inputs.items()}
         ranges = self._ranges()
-        company = self.company_edit.text()
+        company = self.ctx.company
         self.search_btn.setEnabled(False)
         self.search_btn.setText("  Searching...")
         self.search_banner.clear_message()
@@ -550,7 +542,7 @@ class SearchPrintPage(QWidget):
         self.results_stack.setCurrentIndex(1 if rows else 0)
         if searched and not rows:
             self.empty_title.setText("No matching assets")
-            self.empty_hint.setText("Check the search text, date range and company code.")
+            self.empty_hint.setText(f"Check the search text and date range. Company: {self.ctx.company.upper() or '-'} (change it in the sidebar).")
         elif not searched:
             self.empty_title.setText("No results yet")
             self.empty_hint.setText("Enter search criteria above and press Search.")
