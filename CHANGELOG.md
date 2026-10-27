@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.3 (2026-10-27)
+
+- Updates work for both kinds of installation:
+  - "Install for me only": as before, no administrator needed.
+  - "Install for all users" (Program Files): Windows shows a UAC prompt, so ICT can type an administrator account. Afterwards the program opens again as the user at the PC, not as the administrator. If the prompt is cancelled, the old version opens again.
+- The update bar no longer shows "Try again" when trying again cannot help.
+- Installer accepts /CURRENTUSER and /ALLUSERS on the command line.
+
 ## 0.9.2 (2026-10-27)
 
 - Update folder moved to `\\ncr230\RY_File\_Free-OSS\NCRPrintLabel`. 0.9.2 is also published in the old folder, so PCs with 0.9.1 move over by themselves.

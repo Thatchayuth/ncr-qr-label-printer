@@ -7,7 +7,8 @@ The folder (Application Settings) holds:
 
 ICT publishes with scripts/publish_update.ps1. The app reads latest.json on start; when the version is
 newer it offers the update, copies the installer to the local data folder, checks its SHA-256 and runs it
-silently after the app has closed. Settings, history and designs are kept by the installer.
+silently after the app has closed (with a UAC prompt when installed for all users).
+Settings, history and designs are kept by the installer.
 """
 from __future__ import annotations
 
@@ -132,37 +133,66 @@ def download(info: UpdateInfo, folder: str, dest_dir: Path) -> Path:
     return dest
 
 
-def can_install_here() -> tuple[bool, str]:
-    """Only the installed program updates itself, and only when this user may write to its folder."""
-    if not getattr(sys, "frozen", False):
-        return False, "Updates install only into the installed program, not when running from source."
-    folder = Path(sys.executable).resolve().parent
+USER_MODE, ADMIN_MODE = "user", "admin"
+
+
+def install_mode(exe: Path | None = None) -> tuple[str | None, str]:
+    """How this copy can be updated.
+
+    ("user", "")      installed "for me only": the user can update it without an administrator.
+    ("admin", text)   installed "for all users" (Program Files): Windows asks for an administrator (UAC).
+    (None, reason)    cannot be updated from here (running from source).
+    """
+    if exe is None:
+        if not getattr(sys, "frozen", False):
+            return None, "Updates install only into the installed program, not when running from source."
+        exe = Path(sys.executable)
+    folder = exe.resolve().parent
     probe = folder / ".update-write-test"
     try:
         probe.write_text("x", encoding="ascii")
         probe.unlink()
     except OSError:
-        return False, (f"The program is installed for all users in {folder}; this Windows account cannot "
-                       "update it. Ask ICT to run the new installer.")
-    return True, ""
+        return ADMIN_MODE, (f"NCR Print Label is installed for all users ({folder}). Windows will ask for an "
+                            "administrator password (ICT) to install the update.")
+    return USER_MODE, ""
 
 
-def installer_command(installer: Path) -> list[str]:
-    # /RELAUNCH=1 makes the installer start the program again (see installer/NCRPrintLabel.iss).
-    return [str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/RELAUNCH=1",
-            f"/LOG={installer.with_suffix('.log')}"]
+def installer_command(installer: Path, mode: str = USER_MODE) -> list[str]:
+    args = [str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", f"/LOG={installer.with_suffix('.log')}"]
+    if mode == ADMIN_MODE:
+        args.append("/ALLUSERS")  # same place as before (Program Files)
+    else:
+        args.append("/CURRENTUSER")
+    return args
 
 
-def start_installer_after_exit(installer: Path, pid: int) -> None:
-    """Run the installer once this process (pid) has exited, so no file of the program is in use."""
-    def ps_quote(text: str) -> str:
-        return "'" + text.replace("'", "''") + "'"
+def _ps_quote(text: str) -> str:
+    return "'" + text.replace("'", "''") + "'"
 
-    exe, *args = installer_command(installer)
-    script = (
+
+def updater_script(installer: Path, pid: int, app_exe: Path, mode: str = USER_MODE) -> str:
+    """PowerShell run in the background: wait for the program to close, install, open the program again.
+
+    The program is started again by this script, which runs as the signed-in user, never by the
+    (possibly elevated) installer: after a UAC prompt where ICT typed an administrator account, the
+    program must still open for the user at the PC. If the UAC prompt is cancelled or the install
+    fails, the old version opens again.
+    """
+    exe, *args = installer_command(installer, mode)
+    arg_list = ", ".join(_ps_quote(a) for a in args)
+    elevate = " -Verb RunAs" if mode == ADMIN_MODE else ""
+    return (
         f"Wait-Process -Id {int(pid)} -Timeout 120 -ErrorAction SilentlyContinue; "
-        f"Start-Process -FilePath {ps_quote(exe)} -ArgumentList {', '.join(ps_quote(a) for a in args)}"
+        f"try {{ Start-Process -FilePath {_ps_quote(exe)} -ArgumentList {arg_list}{elevate} -Wait }} catch {{ }}; "
+        f"Start-Process -FilePath {_ps_quote(str(app_exe))}"
     )
+
+
+def start_installer_after_exit(installer: Path, pid: int, app_exe: Path | None = None, mode: str = USER_MODE) -> None:
+    """Run the installer once this process (pid) has exited, so no file of the program is in use."""
+    app_exe = app_exe or Path(sys.executable)
+    script = updater_script(installer, pid, app_exe, mode)
     # no console window; own process group so it keeps running after this program exits
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     subprocess.Popen(
@@ -170,4 +200,4 @@ def start_installer_after_exit(installer: Path, pid: int) -> None:
          "-WindowStyle", "Hidden", "-Command", script],
         creationflags=flags, close_fds=True,
     )
-    log.info("Installer %s will start after the program closes", installer.name)
+    log.info("Installer %s (%s install) will start after the program closes", installer.name, mode)

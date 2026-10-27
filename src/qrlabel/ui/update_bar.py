@@ -44,6 +44,7 @@ class UpdateBar(QFrame):
         must = " <b>This update is required.</b>" if info.required else ""
         self.text.setText(f"<b>New version {escape(info.version)}</b> is available (you have {escape(current)}).{must}{notes}")
         self.setStyleSheet(_STYLE["required" if info.required else "info"])
+        self.update_btn.setVisible(True)
         self.update_btn.setEnabled(True)
         self.update_btn.setText("Update now")
         self.later_btn.setVisible(not info.required)
@@ -55,12 +56,14 @@ class UpdateBar(QFrame):
         self.later_btn.hide()
         self.show()
 
-    def show_error(self, text: str) -> None:
+    def show_error(self, text: str, retry: bool = True) -> None:
+        """retry=False: trying again cannot help (e.g. running from source), so no "Try again" button."""
         from html import escape
 
         self.setStyleSheet(_STYLE["error"])
         self.text.setText(escape(text))
-        self.update_btn.setEnabled(self.info is not None)
+        self.update_btn.setVisible(retry)
+        self.update_btn.setEnabled(retry and self.info is not None)
         self.update_btn.setText("Try again")
         self.later_btn.setVisible(not (self.info and self.info.required))
         self.show()

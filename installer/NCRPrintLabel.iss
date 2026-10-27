@@ -21,8 +21,9 @@ AppPublisher=NCR
 VersionInfoVersion={#AppVersion}
 VersionInfoProductName={#AppName}
 ; Per-user install by default (no admin rights needed); the user may choose "install for all users".
+; The program updates itself with /CURRENTUSER or /ALLUSERS (all users: Windows asks for an administrator).
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+PrivilegesRequiredOverridesAllowed=commandline dialog
 DefaultDirName={autopf}\NCR Print Label
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes

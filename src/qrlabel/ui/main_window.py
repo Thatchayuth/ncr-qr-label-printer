@@ -252,19 +252,20 @@ class MainWindow(QMainWindow):
 
     def start_update(self, info) -> None:
         from ..app.paths import app_data_dir
-        from ..services.updater import can_install_here, download, start_installer_after_exit
+        from ..services.updater import ADMIN_MODE, download, install_mode, start_installer_after_exit
 
-        ok, why = can_install_here()
-        if not ok:
-            self.update_bar.show_error(why)
+        mode, why = install_mode()
+        if mode is None:
+            self.update_bar.show_error(why, retry=False)
             return
         if getattr(self.search_page, "_printing", False):
             self.update_bar.show_error("Labels are being printed. Update when printing has finished.")
             return
+        admin_note = f"\n\n{why}" if mode == ADMIN_MODE else ""
         answer = QMessageBox.question(
             self, "Update NCR Print Label",
             f"NCR Print Label will close, install version {info.version} and open again (about a minute).\n\n"
-            "Settings, print history and label designs are kept. Continue?",
+            f"Settings, print history and label designs are kept.{admin_note}\n\nContinue?",
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
@@ -275,12 +276,13 @@ class MainWindow(QMainWindow):
             import os
 
             try:
-                start_installer_after_exit(installer, os.getpid())
+                start_installer_after_exit(installer, os.getpid(), mode=mode)
             except Exception as e:
                 self.update_bar.show_error(f"Cannot start the installer: {e}")
                 return
             logging.getLogger(__name__).info("Closing for the update to %s", info.version)
-            self.update_bar.show_busy("Installing... the program opens again when it is done.")
+            self.update_bar.show_busy("Installing... the program opens again when it is done."
+                                      + (" Windows asks for an administrator password." if mode == ADMIN_MODE else ""))
             QTimer.singleShot(300, QApplication.instance().quit)
 
         run_async(lambda: download(info, folder, app_data_dir() / "updates"), ready,
