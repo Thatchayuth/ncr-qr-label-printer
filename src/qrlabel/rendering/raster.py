@@ -25,6 +25,7 @@ _REGULAR_FONTS = ["tahoma.ttf", "LeelawUI.ttf", "arial.ttf"]
 _BOLD_FONTS = ["tahomabd.ttf", "LeelaUIb.ttf", "arialbd.ttf"]
 
 _PLACEHOLDER_RE = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+MIN_QR_CELL_DOTS = 3  # 3 dots = 0.375 mm per QR module at 203 dpi; smaller is unreliable to scan
 
 
 @dataclass
@@ -169,7 +170,12 @@ def rasterize_element(
     if el.kind == "qr":
         if not qr_text:
             return None, [f"{name}: no QR payload"]
-        placed, _ = rasterize_qr(qr_text, ecc, el, t.dpi)
+        placed, geo = rasterize_qr(qr_text, ecc, el, t.dpi)
+        if geo.cell < MIN_QR_CELL_DOTS:
+            warnings.append(
+                f"{name}: QR dots are only {geo.cell} printer dot(s) ({geo.modules}×{geo.modules} modules) - "
+                f"may be hard to scan. Make the QR bigger, put less data in it or use error correction L."
+            )
         return placed, warnings
     if el.kind == "text":
         text = resolve_text(el, values)

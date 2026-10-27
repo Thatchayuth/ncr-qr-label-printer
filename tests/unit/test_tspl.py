@@ -139,3 +139,14 @@ def test_shapes_native(template):
 def test_template_roundtrip(template):
     again = LabelTemplate.from_dict(template.to_dict())
     assert again == template
+
+
+def test_small_qr_modules_warn(template):
+    from qrlabel.app.defaults import default_asset_qr  # noqa: F401  (long multi-line payload)
+
+    long_text = "Asset code : FA-IT-5-14-0020\r\n" + "Name : " + "พาซิชั่น แผงชุดครึ่งกระจก-ลาย ยาว 380xสูง 160 ซม. " * 2
+    template.elements[0].w_mm = template.elements[0].h_mm = 15
+    _, warnings = R.render_job(template, [({"ASSETID": "A"}, long_text)], copies=1, ecc="M")
+    assert any("hard to scan" in w for w in warnings)
+    _, warnings = R.render_job(template, [({"ASSETID": "A"}, "FA-IT-5-14-0020")], copies=1)
+    assert not any("hard to scan" in w for w in warnings)

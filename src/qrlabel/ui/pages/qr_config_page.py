@@ -28,6 +28,10 @@ from ..widgets import Banner, Card, chip, labeled, page_header, pil_to_pixmap, s
 from ..workers import error_text, run_async
 
 
+LABEL_ROLE = Qt.ItemDataRole.UserRole + 1  # label used inside the QR (labeled format)
+NAME_ROLE = Qt.ItemDataRole.UserRole + 2  # field display name
+
+
 def try_decode(img) -> str | None:
     """Decode a QR image with OpenCV if it is installed (development builds). None = not available."""
     try:
@@ -92,8 +96,17 @@ class QrConfigPage(QWidget):
         self.format.addItem("Plain - one field only", "plain")
         self.format.addItem("Delimited - fields joined by a separator", "delimited")
         self.format.addItem("JSON - {\"label\": \"value\"}", "json")
+        self.format.addItem("Labeled lines - \"Label : value\" per line (previous app)", "labeled")
         self.delimiter = QLineEdit()
         self.delimiter.setMaxLength(5)
+        self.qr_label = QLineEdit()
+        self.qr_label.setMaxLength(40)
+        self.qr_label.setPlaceholderText("Select a field above, then type its label in the QR")
+        self.label_sep = QLineEdit()
+        self.label_sep.setMaxLength(5)
+        self.line_sep = QComboBox()
+        for text, sep in (("New line (CR+LF)", "\r\n"), ("New line (LF)", "\n"), ("Space", " "), ("Semicolon", "; ")):
+            self.line_sep.addItem(text, sep)
         self.prefix = QLineEdit()
         self.prefix.setMaxLength(50)
         self.suffix = QLineEdit()
@@ -109,6 +122,9 @@ class QrConfigPage(QWidget):
         self.max_bytes.setSuffix(" bytes")
         f.addRow("Format", self.format)
         f.addRow("Separator", self.delimiter)
+        f.addRow("Label in QR", self.qr_label)
+        f.addRow("Between label and value", self.label_sep)
+        f.addRow("Between lines", self.line_sep)
         f.addRow("Prefix", self.prefix)
         f.addRow("Suffix", self.suffix)
         f.addRow("Empty field", self.null_policy)
@@ -163,8 +179,11 @@ class QrConfigPage(QWidget):
         self.profile_combo.currentIndexChanged.connect(self._on_profile)
         for c in (self.format, self.null_policy, self.ecc):
             c.currentIndexChanged.connect(self._preview)
-        for e in (self.delimiter, self.prefix, self.suffix):
+        for e in (self.delimiter, self.prefix, self.suffix, self.label_sep):
             e.textChanged.connect(self._preview)
+        self.line_sep.currentIndexChanged.connect(self._preview)
+        self.qr_label.textEdited.connect(self._on_qr_label_edited)
+        self.fields.currentRowChanged.connect(self._on_field_row)
         self.max_bytes.valueChanged.connect(self._preview)
         self.fields.itemChanged.connect(lambda *_: self._preview())
         self.fields.model().rowsMoved.connect(lambda *_: self._preview())
@@ -203,14 +222,25 @@ class QrConfigPage(QWidget):
         self.fields.clear()
         chosen = [c.upper() for c in q.fields]
         ordered = [p.get_field(c) for c in q.fields if p.get_field(c)] + [f for f in p.fields if f.column.upper() not in chosen]
+        labels = {k.upper(): v for k, v in q.labels.items()}
         for fd in ordered:
-            item = QListWidgetItem(f"{fd.label}   ·   {fd.column}")
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, fd.column)
+            item.setData(LABEL_ROLE, labels.get(fd.column.upper(), ""))
+            item.setData(NAME_ROLE, fd.label)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
             item.setCheckState(Qt.CheckState.Checked if fd.column.upper() in chosen else Qt.CheckState.Unchecked)
+            self._set_item_text(item)
             self.fields.addItem(item)
         self.format.setCurrentIndex(max(0, self.format.findData(q.format)))
         self.delimiter.setText(q.delimiter)
+        self.label_sep.setText(q.label_separator)
+        idx = self.line_sep.findData(q.line_separator)
+        if idx < 0:
+            self.line_sep.addItem(repr(q.line_separator), q.line_separator)
+            idx = self.line_sep.count() - 1
+        self.line_sep.setCurrentIndex(idx)
+        self.qr_label.clear()
         self.prefix.setText(q.prefix)
         self.suffix.setText(q.suffix)
         self.null_policy.setCurrentIndex(max(0, self.null_policy.findData(q.null_policy)))
@@ -232,14 +262,32 @@ class QrConfigPage(QWidget):
         self.fields.setCurrentRow(target)
         self._preview()
 
+    def _set_item_text(self, item: QListWidgetItem) -> None:
+        text = f"{item.data(NAME_ROLE)}   ·   {item.data(Qt.ItemDataRole.UserRole)}"
+        if item.data(LABEL_ROLE):
+            text += f"      QR label: “{item.data(LABEL_ROLE)}”"
+        item.setText(text)
+
+    def _on_field_row(self, row: int) -> None:
+        item = self.fields.item(row) if row >= 0 else None
+        self.qr_label.setEnabled(item is not None)
+        self.qr_label.setText(item.data(LABEL_ROLE) if item else "")
+
+    def _on_qr_label_edited(self, text: str) -> None:
+        item = self.fields.currentItem()
+        if item is None:
+            return
+        item.setData(LABEL_ROLE, text.strip())
+        self._set_item_text(item)
+        self._preview()
+
     def form_config(self) -> QrConfig:
-        cols = [
-            self.fields.item(i).data(Qt.ItemDataRole.UserRole)
-            for i in range(self.fields.count())
-            if self.fields.item(i).checkState() == Qt.CheckState.Checked
-        ]
+        items = [self.fields.item(i) for i in range(self.fields.count())]
+        cols = [it.data(Qt.ItemDataRole.UserRole) for it in items if it.checkState() == Qt.CheckState.Checked]
+        labels = {it.data(Qt.ItemDataRole.UserRole): it.data(LABEL_ROLE) for it in items if it.data(LABEL_ROLE)}
         return QrConfig(
             format=self.format.currentData(), fields=cols, delimiter=self.delimiter.text(),
+            labels=labels, label_separator=self.label_sep.text(), line_separator=self.line_sep.currentData(),
             prefix=self.prefix.text(), suffix=self.suffix.text(), null_policy=self.null_policy.currentData(),
             error_correction=self.ecc.currentData(), max_bytes=self.max_bytes.value(),
         )
@@ -266,6 +314,9 @@ class QrConfigPage(QWidget):
         if self._loading:
             return
         self.form.setRowVisible(self.delimiter, self.format.currentData() == "delimited")
+        labeled = self.format.currentData() == "labeled"
+        for w in (self.qr_label, self.label_sep, self.line_sep):
+            self.form.setRowVisible(w, labeled)
         p = self._edited_profile()
         if not p:
             return

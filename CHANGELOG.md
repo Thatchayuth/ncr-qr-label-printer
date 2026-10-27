@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- QR content now matches the previous application: one "Label : value" per line (Asset code, Name, Acquisition date, Acquisition, Department, Purchase order), CR+LF between lines, error correction L. New QR format "Labeled lines" with editable QR labels and separators in QR Configuration.
+- Warning when QR dots are smaller than 3 printer dots (hard to scan) in preview, designer and print.
+
 - PO No. now comes from `AssetBook.PurchId` as in the previous application, with `TechInfo2` used when PurchId is empty.
 - New columns from AssetBook: Department (Dimension), Acquisition date (with From–To filter) and Acquisition price (`#,##0.00`).
 - Data profiles can read one row per asset from a related table (`OUTER APPLY TOP 1`) with a chosen order, and can fall back to another column.

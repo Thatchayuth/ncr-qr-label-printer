@@ -10,6 +10,8 @@ from ..domain.errors import PayloadError
 from ..domain.models import DataProfile
 from .formatting import format_value, is_null, record_get
 
+LINE_SEPARATORS = ("\r\n", "\n")  # the only control characters allowed in a payload
+
 # Byte-mode capacity of QR version 40 per error-correction level.
 QR_BYTE_CAPACITY = {"L": 2953, "M": 2331, "Q": 1663, "H": 1273}
 
@@ -43,24 +45,32 @@ class QrPayloadBuilder:
                 if cfg.null_policy == "error" or (fd and fd.required):
                     raise PayloadError(f"QR field '{fd.label if fd else column}' is empty.")
             value = format_value(raw, fd)
+            if cfg.format == "labeled":
+                value = " ".join(value.split())  # AX text with line breaks stays on its own line
             if _has_control_chars(value):
                 raise PayloadError(f"QR field '{column}' contains control characters.")
             if cfg.format == "delimited" and cfg.delimiter and cfg.delimiter in value:
                 raise PayloadError(f"QR field '{column}' contains the delimiter '{cfg.delimiter}'.")
-            items.append((fd.label if fd else column, value))
+            label = (cfg.labels.get(column) or cfg.labels.get(column.upper()) or "") if cfg.format == "labeled" else ""
+            items.append((label or (fd.label if fd else column), value))
 
+        for part in (cfg.prefix, cfg.suffix, cfg.label_separator, *(lbl for lbl, _ in items)):
+            if _has_control_chars(part):
+                raise PayloadError("QR prefix, suffix or labels contain control characters.")
         if cfg.format == "plain":
             body = items[0][1]
         elif cfg.format == "delimited":
             body = cfg.delimiter.join(v for _, v in items)
         elif cfg.format == "json":
             body = json.dumps(dict(items), ensure_ascii=False, separators=(",", ":"))
+        elif cfg.format == "labeled":
+            if cfg.line_separator not in LINE_SEPARATORS and _has_control_chars(cfg.line_separator):
+                raise PayloadError("QR line separator may only be CR+LF, LF or printable text.")
+            body = cfg.line_separator.join(f"{label}{cfg.label_separator}{value}".rstrip() for label, value in items)
         else:
             raise PayloadError(f"Unknown QR format '{cfg.format}'.")
 
         text = unicodedata.normalize("NFC", f"{cfg.prefix}{body}{cfg.suffix}")
-        if _has_control_chars(text):
-            raise PayloadError("QR prefix/suffix contains control characters.")
         size = len(text.encode("utf-8"))
         if size == 0:
             raise PayloadError("QR payload is empty.")

@@ -108,3 +108,21 @@ _None yet. The printer has not been connected._
 - **Change the admin password after installation** (Application Settings → Change admin password).
 - After 5 wrong attempts, the unlock is blocked for 30 seconds.
 - This is an operator gate, not a security boundary: a Windows user can still edit or delete `config.json`. If `admin.password_hash` is removed, the initial password works again. Real data protection is the read-only SQL login.
+
+### QR content of the previous application (2026-10-27)
+
+Scanning an old label gives one "Label : value" per line, for example:
+
+```
+Asset code : FA-IT-5-14-0020
+Name : Computer Set - Core i3 (NCR107 Office Mold)
+Acquisition date : 29/04/2014
+Acquisition : 9,600.00
+Department : FPRO_MOLD
+Purchase order :
+```
+
+- The default QR configuration ("Labeled lines") produces exactly this text. This was checked against AX for FA-IT-5-14-0020.
+- Assumption: lines are separated by CR+LF (the usual C# `Environment.NewLine`). This can be changed in QR Configuration.
+- The payload is 180–260 bytes (Thai names are longer in UTF-8). Error correction L and a QR of at least about 22 mm keep the dots at 3 printer dots or more. Smaller QR codes now show a "hard to scan" warning.
+- Purchase order uses AssetBook.PurchId, falling back to TechInfo2. The old application left this line empty when PurchId was empty.

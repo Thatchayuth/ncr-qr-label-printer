@@ -11,6 +11,68 @@ from qrlabel.services.qr_payload import QrPayloadBuilder
 B = QrPayloadBuilder()
 
 
+@pytest.fixture(autouse=True)
+def plain_qr(profile):
+    """Most tests here use a plain AssetId QR; the labeled format has its own tests below."""
+    profile.qr = QrConfig(format="plain", fields=["ASSETID"], max_bytes=100)
+    return profile
+
+
+OLD_APP_TEXT = (
+    "Asset code : FA-IT-5-14-0020\r\n"
+    "Name : Computer Set - Core i3 (NCR107 Office Mold)\r\n"
+    "Acquisition date : 29/04/2014\r\n"
+    "Acquisition : 9,600.00\r\n"
+    "Department : FPRO_MOLD\r\n"
+    "Purchase order :"
+)
+OLD_APP_RECORD = {
+    "ASSETID": "FA-IT-5-14-0020", "NAME": "Computer Set - Core i3 (NCR107 Office Mold)",
+    "ACQUISITIONDATE": datetime(2014, 4, 29), "ACQUISITIONPRICE": Decimal("9600.000000000000"),
+    "DIMENSION": "FPRO_MOLD", "PURCHID": "",
+}
+
+
+def test_labeled_matches_previous_application(profile):
+    from qrlabel.app.defaults import default_asset_qr
+
+    profile.qr = default_asset_qr()
+    p = B.build(OLD_APP_RECORD, profile)
+    assert p.text == OLD_APP_TEXT
+    assert p.error_correction == "L"
+
+
+def test_labeled_requires_asset_id_but_allows_other_empty(profile):
+    from qrlabel.app.defaults import default_asset_qr
+
+    profile.qr = default_asset_qr()
+    with pytest.raises(PayloadError):
+        B.build({**OLD_APP_RECORD, "ASSETID": ""}, profile)
+    assert "Name :\r\n" in B.build({**OLD_APP_RECORD, "NAME": None}, profile).text
+
+
+def test_labeled_flattens_line_breaks_inside_values(profile):
+    from qrlabel.app.defaults import default_asset_qr
+
+    profile.qr = default_asset_qr()
+    p = B.build({**OLD_APP_RECORD, "PURCHID": "PO: 111659_018\nPO Date: 03/12/2021"}, profile)
+    assert p.text.endswith("Purchase order : PO: 111659_018 PO Date: 03/12/2021")
+    assert p.text.count("\r\n") == 5
+
+
+def test_labeled_rejects_control_chars_in_labels(profile):
+    from qrlabel.app.defaults import default_asset_qr
+
+    profile.qr = default_asset_qr()
+    profile.qr.labels["NAME"] = "Na\x07me"
+    with pytest.raises(PayloadError):
+        B.build(OLD_APP_RECORD, profile)
+    profile.qr.labels["NAME"] = "Name"
+    profile.qr.line_separator = "\x00"
+    with pytest.raises(PayloadError):
+        B.build(OLD_APP_RECORD, profile)
+
+
 def test_plain_asset_id(profile):
     p = B.build({"ASSETID": "FA-000123"}, profile)
     assert p.text == "FA-000123"

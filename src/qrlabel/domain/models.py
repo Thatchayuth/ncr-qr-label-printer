@@ -78,9 +78,13 @@ class LookupDef:
 
 @dataclass
 class QrConfig:
-    format: str = "plain"  # plain | delimited | json
+    format: str = "plain"  # plain | delimited | json | labeled
     fields: list[str] = field(default_factory=list)
     delimiter: str = "|"
+    # labeled format: one "Label : value" per line (same as the previous application)
+    labels: dict[str, str] = field(default_factory=dict)  # column -> label in the QR (default: field alias)
+    label_separator: str = " : "
+    line_separator: str = "\r\n"
     prefix: str = ""
     suffix: str = ""
     null_policy: str = "error"  # error | empty

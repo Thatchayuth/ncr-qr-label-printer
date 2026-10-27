@@ -13,6 +13,33 @@ DEFAULT_PROFILE_ID = "asset"
 DEFAULT_TEMPLATE_ID = "asset-qr-sample-40x30"
 
 
+def default_asset_qr() -> QrConfig:
+    """Same QR text as the previous application, e.g.
+
+    Asset code : FA-IT-5-14-0020
+    Name : Computer Set - Core i3 (NCR107 Office Mold)
+    Acquisition date : 29/04/2014
+    Acquisition : 9,600.00
+    Department : FPRO_MOLD
+    Purchase order :
+
+    Error correction L keeps the QR scannable on small stickers (about 180-260 bytes of text).
+    """
+    return QrConfig(
+        format="labeled",
+        fields=["ASSETID", "NAME", "ACQUISITIONDATE", "ACQUISITIONPRICE", "DIMENSION", "PURCHID"],
+        labels={
+            "ASSETID": "Asset code", "NAME": "Name", "ACQUISITIONDATE": "Acquisition date",
+            "ACQUISITIONPRICE": "Acquisition", "DIMENSION": "Department", "PURCHID": "Purchase order",
+        },
+        label_separator=" : ",
+        line_separator="\r\n",
+        null_policy="empty",  # only Asset code is required (field.required)
+        error_correction="L",
+        max_bytes=600,
+    )
+
+
 def default_asset_profile() -> DataProfile:
     return DataProfile(
         id=DEFAULT_PROFILE_ID,
@@ -39,7 +66,7 @@ def default_asset_profile() -> DataProfile:
                            order_by=["ACQUISITIONPRICE DESC", "BOOKID"])],
         order_by=["ASSETID"],
         row_limit=200,
-        qr=QrConfig(format="plain", fields=["ASSETID"], error_correction="M", max_bytes=100),
+        qr=default_asset_qr(),
         template_id=DEFAULT_TEMPLATE_ID,
     )
 
