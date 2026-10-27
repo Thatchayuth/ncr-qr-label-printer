@@ -58,6 +58,8 @@ def validate_template(t: LabelTemplate) -> list[str]:
             issues.append(f"{label}: outside printable area (margin {m} mm).")
         if e.kind == "text" and e.font_mm <= 0:
             issues.append(f"{label}: font size must be greater than 0.")
+        if e.kind == "qr" and not 0 <= int(e.qr_version) <= 40:
+            issues.append(f"{label}: QR size must be Auto or version 1-40.")
         if e.kind == "image" and not e.image_data:
             issues.append(f"{label}: no image selected.")
     return issues

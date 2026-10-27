@@ -72,11 +72,24 @@ def resolve_text(el: LabelElement, values: dict[str, str]) -> str:
     return _PLACEHOLDER_RE.sub(lambda m: values.get(m.group(1).upper(), ""), el.text)
 
 
-def qr_matrix(text: str, ecc: str) -> list[list[bool]]:
-    q = qrcode.QRCode(error_correction=ECC_LEVELS[ecc], box_size=1, border=0)
+def qr_matrix(text: str, ecc: str, version: int = 0) -> list[list[bool]]:
+    """QR modules. `version` > 0 fixes the size (it still grows if the data does not fit)."""
+    q = qrcode.QRCode(version=version or None, error_correction=ECC_LEVELS[ecc], box_size=1, border=0)
     q.add_data(text.encode("utf-8"))
     q.make(fit=True)
     return q.get_matrix()
+
+
+def qr_version_of(matrix: list[list[bool]]) -> int:
+    return (len(matrix) - 17) // 4
+
+
+def qr_byte_capacity(version: int, ecc: str) -> int:
+    """How many bytes of UTF-8 text fit in a QR version (byte mode)."""
+    from qrcode.util import BIT_LIMIT_TABLE
+
+    bits = BIT_LIMIT_TABLE[ECC_LEVELS[ecc]][version]
+    return (bits - 4 - (8 if version < 10 else 16)) // 8
 
 
 def qr_geometry(modules: int, box_w: int, box_h: int, max_cell: int | None = None) -> QrGeometry:
@@ -103,7 +116,7 @@ def text_overflows(text: str, el: LabelElement, dpi: int) -> bool:
 
 
 def rasterize_qr(qr_text: str, ecc: str, el: LabelElement, dpi: int) -> tuple[Placed, QrGeometry]:
-    matrix = qr_matrix(qr_text, ecc)
+    matrix = qr_matrix(qr_text, ecc, el.qr_version)
     n = len(matrix)
     geo = qr_geometry(n, mm_to_dots(el.w_mm, dpi), mm_to_dots(el.h_mm, dpi))
     img = Image.new("1", (n, n), 1)
@@ -188,6 +201,12 @@ def rasterize_element(
         if not qr_text:
             return None, [f"{name}: no QR payload"]
         placed, geo = rasterize_qr(qr_text, ecc, el, t.dpi)
+        actual = (geo.modules - 17) // 4
+        if el.qr_version and actual > el.qr_version:
+            warnings.append(
+                f"{name}: data is too long for the fixed QR size (version {el.qr_version}, "
+                f"{qr_byte_capacity(el.qr_version, ecc)} bytes); this label uses version {actual}, so its QR looks different."
+            )
         if geo.cell < MIN_QR_CELL_DOTS:
             warnings.append(
                 f"{name}: QR dots are only {geo.cell} printer dot(s) ({geo.modules}×{geo.modules} modules) - "

@@ -126,3 +126,14 @@ Purchase order :
 - Assumption: lines are separated by CR+LF (the usual C# `Environment.NewLine`). This can be changed in QR Configuration.
 - The payload is 180–260 bytes (Thai names are longer in UTF-8). Error correction L and a QR of at least about 22 mm keep the dots at 3 printer dots or more. Smaller QR codes now show a "hard to scan" warning.
 - Purchase order uses AssetBook.PurchId, falling back to TechInfo2. The old application left this line empty when PurchId was empty.
+
+### QR size analysis (2026-10-27, labeled QR text, ECC L)
+
+| Company | Assets | Bytes (median / 99% / max) | QR versions needed |
+|---|---|---|---|
+| db1 | 5,997 | 182 / 291 / 368 | 5–13 (mostly 8–9) |
+| db2, db3 | 2,517 each | 162 / 216 / 218 | 5–9 |
+
+- With automatic sizing, the QR width changes from label to label: more data means more modules, and each module must be a whole number of printer dots.
+- In the 27.5 mm QR box of the "Asset QR" template, version 13 fits every asset in all three companies (up to 425 bytes). It prints at 25.9 mm with 3 dots per module.
+- Template "Asset QR" v16 uses a fixed version 13. This was checked by decoding the 144-, 195-, 200- and 368-byte labels.

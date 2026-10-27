@@ -71,6 +71,7 @@ def _coerce_numbers(t: LabelTemplate) -> None:
         for attr in ("x_mm", "y_mm", "w_mm", "h_mm", "font_mm", "thickness_mm", "min_font_mm"):
             setattr(e, attr, float(getattr(e, attr)))
         e.rotation = int(e.rotation)
+        e.qr_version = int(e.qr_version)
         for attr in ("text", "field", "align", "kind", "name", "image_data"):
             if not isinstance(getattr(e, attr), str):
                 raise TypeError(f"element {attr} must be text")

@@ -107,7 +107,8 @@ class TsplRenderer:
         self, el: LabelElement, t: LabelTemplate, values: dict[str, str], qr_text: str | None, ecc: str
     ) -> tuple[bytes, list[str]]:
         name = el.name or el.kind
-        if el.kind == "qr" and qr_text and t.qr_mode == "native" and el.rotation == 0:
+        # the printer's QRCODE command picks its own size, so a fixed QR size always uses the bitmap
+        if el.kind == "qr" and qr_text and t.qr_mode == "native" and el.rotation == 0 and not el.qr_version:
             if is_native_safe(qr_text):
                 return self._native_qr(el, t, qr_text, ecc), []
             fallback = [f"{name}: QR data not safe for native mode; printed as bitmap"]

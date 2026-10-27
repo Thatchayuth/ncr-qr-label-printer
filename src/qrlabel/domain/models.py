@@ -156,6 +156,7 @@ class LabelElement:
     thickness_mm: float = 0.3
     name: str = ""
     locked: bool = False  # designer only: cannot be moved / resized on the canvas
+    qr_version: int = 0  # qr: 0 = grows with the data; 1-40 = same size on every label (bigger only if data does not fit)
     image_data: str = ""  # image: base64 PNG stored inside the template
     dither: bool = False  # image: dither grey tones (photos) instead of a hard black/white cut (logos)
 

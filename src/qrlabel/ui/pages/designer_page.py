@@ -31,7 +31,9 @@ from ...app.defaults import default_asset_template
 from ...domain.layout import TE200_MAX_PRINT_WIDTH_MM, validate_template
 from ...domain.models import DataProfile, LabelElement, LabelTemplate, new_id
 from ...services.formatting import build_label_values
+from ...domain.layout import mm_to_dots
 from ...rendering.images import SUPPORTED as SUPPORTED_IMAGES
+from ...rendering.raster import qr_byte_capacity, qr_matrix
 from ...rendering.images import load_image_file
 from ...services.template_io import duplicate_template, export_template, import_template
 from ..designer.canvas import ElementItem, LabelScene, LabelView, footprint
@@ -343,6 +345,14 @@ class DesignerPage(QWidget):
         self.e_image_btn = QPushButton("Replace image...")
         self.e_dither = QCheckBox("Dither grey tones (photos)")
         self.e_dither.setToolTip("On: grey tones become dot patterns (photos).\nOff: sharp black/white (logos, line art).")
+        self.e_qr_size = QComboBox()
+        self.e_qr_size.setToolTip(
+            "Auto: the QR grows with the amount of data, so labels can differ in size.\n"
+            "Fixed: every label gets the same QR size (only data that does not fit makes it bigger)."
+        )
+        self.QR_SIZE_ROW = f.rowCount()
+        f.addRow("QR size", self.e_qr_size)
+        self.e_qr_size.currentIndexChanged.connect(self._on_element_edit)
         self.IMAGE_ROW = f.rowCount()
         f.addRow("Image", self.e_image_btn)
         self.DITHER_ROW = f.rowCount()
@@ -908,6 +918,31 @@ class DesignerPage(QWidget):
         sel = [i for i in self.items if i.isSelected()]
         return sel[0] if len(sel) == 1 else None
 
+    def _fill_qr_sizes(self, el: LabelElement) -> None:
+        """Options for a fixed QR size, with the printed size for this box and how much data fits."""
+        dpi = self.template.dpi if self.template else 203
+        box = min(mm_to_dots(el.w_mm, dpi), mm_to_dots(el.h_mm, dpi))
+        current = self.qr_text and len(qr_matrix(self.qr_text, self.ecc))
+        self.e_qr_size.blockSignals(True)
+        self.e_qr_size.clear()
+        self.e_qr_size.addItem("Auto - grows with the data", 0)
+        for v in range(1, 41):
+            modules = 17 + 4 * v
+            cell = box // modules
+            if cell < 1:
+                break
+            size_mm = modules * cell * 25.4 / dpi
+            note = "  (small dots)" if cell < 3 else ""
+            self.e_qr_size.addItem(
+                f"Fixed v{v} · {size_mm:.1f} mm · up to {qr_byte_capacity(v, self.ecc)} bytes{note}", v)
+        self.e_qr_size.setCurrentIndex(max(0, self.e_qr_size.findData(el.qr_version)))
+        self.e_qr_size.blockSignals(False)
+        if current:
+            self.e_qr_size.setToolTip(
+                f"The sample data needs version {(current - 17) // 4}. "
+                "Choose a fixed version that fits your longest data so every label looks the same."
+            )
+
     def _pick_image(self) -> tuple[str, int, int] | None:
         path, _ = QFileDialog.getOpenFileName(self, "Choose a picture or logo", "", f"Images ({SUPPORTED_IMAGES})")
         if not path:
@@ -1050,6 +1085,9 @@ class DesignerPage(QWidget):
         self.e_name.setText(el.name)
         self.e_lock.setChecked(el.locked)
         self.e_dither.setChecked(el.dither)
+        self.el_form.setRowVisible(self.QR_SIZE_ROW, el.kind == "qr")
+        if el.kind == "qr":
+            self._fill_qr_sizes(el)
         is_text, is_shape = el.kind == "text", el.kind in ("rect", "line")
         self.el_form.setRowVisible(self.IMAGE_ROW, el.kind == "image")
         self.el_form.setRowVisible(self.DITHER_ROW, el.kind == "image")
@@ -1079,6 +1117,8 @@ class DesignerPage(QWidget):
         el.align = self.e_align.currentData()
         el.thickness_mm = self.e_thick.value()
         el.dither = self.e_dither.isChecked()
+        if el.kind == "qr" and self.e_qr_size.currentData() is not None:
+            el.qr_version = int(self.e_qr_size.currentData())
         renamed =el.name != self.e_name.text().strip() or el.locked != self.e_lock.isChecked()
         el.name = self.e_name.text().strip()
         el.locked = self.e_lock.isChecked()
