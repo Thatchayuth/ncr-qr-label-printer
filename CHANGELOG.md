@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Phase 7: search options per field.
+  - Data Profiles has a **Search by** column: Contains (default, as before), Starts with, or Exact. It applies to one typed value; lists (A, B) and ranges (A..B) are always exact.
+  - Starts with and Exact are much faster on large tables (AX test: 0.01 s vs 0.11 s for Contains on AssetTable).
+  - New option **Search value required**: Search & Print refuses an empty search, for very large tables such as journal lines.
+  - The search boxes show hints that match their mode. The order of search boxes follows the field order (Move up / Move down).
+
 - The app always uses its light look, also when Windows is in dark mode. Dialogs, lists, tables and menus showed dark text on a dark background before.
 
 - Phase 6: labels bound to data profiles.

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from ..domain.models import DataProfile, FieldDef
-from .query_builder import HARD_ROW_LIMIT, IDENT_RE, split_order, split_ref
+from .query_builder import HARD_ROW_LIMIT, IDENT_RE, SEARCH_MODES, split_order, split_ref
 
 # SQL Server types that cannot be compared with = / IN or used in ORDER BY
 UNSORTABLE_TYPES = {"ntext", "text", "image", "xml", "varbinary", "binary", "timestamp", "geography", "geometry"}
@@ -119,6 +119,8 @@ def validate_profile(p: DataProfile, columns: ColumnMap | None = None, template_
             issues.append(f"{f.label}: column {f.source} does not exist in {f.table or p.source}.")
         elif typ in UNSORTABLE_TYPES and (f.searchable or f.range_search):
             issues.append(f"{f.label}: {typ} columns cannot be searched. Turn off Search for this field.")
+        if f.search_mode not in SEARCH_MODES:
+            issues.append(f"{f.label}: unknown search mode '{f.search_mode}'.")
         if f.range_search and f.data_type != "date":
             issues.append(f"{f.label}: date range search needs type 'date'.")
         if f.fallback:
@@ -131,6 +133,8 @@ def validate_profile(p: DataProfile, columns: ColumnMap | None = None, template_
                     issues.append(f"{f.label}: fallback table {ft} is not part of the profile.")
                 elif col_type(ft, fc) is None:
                     issues.append(f"{f.label}: fallback column {f.fallback} does not exist.")
+    if p.require_criteria and not any(f.searchable or f.range_search for f in p.fields):
+        issues.append("'Search value required' is on, but no field has Search or Date range turned on.")
     if p.fields and not any(f.display for f in p.fields):
         issues.append("Show at least one field in the results.")
 

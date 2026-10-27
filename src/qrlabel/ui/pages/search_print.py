@@ -31,12 +31,35 @@ from ...app.context import AppContext
 from ...domain.models import DataProfile, LabelTemplate, PrintStatus, new_id
 from ...rendering.raster import render_label_image
 from ...services.formatting import build_label_values, format_value
+from ...services.query_builder import has_criteria
 from ..icons import icon, pixmap
 from ..widgets import Banner, Card, chip, labeled, nice_calendar, page_header, pil_to_pixmap, sticker_pixmap
 from ..workers import error_text, run_async
 
 PREVIEW_W, PREVIEW_H = 360, 270
 
+
+
+SEARCH_HINTS = {
+    "contains": "contains…  ·  A..B  ·  A, B, C",
+    "starts": "starts with…  ·  A..B  ·  A, B, C",
+    "exact": "exact value  ·  A..B  ·  A, B, C",
+}
+
+
+def search_tooltip(mode: str) -> str:
+    one = {
+        "contains": "<code>FA-IT-5-26</code> &nbsp;contains this text",
+        "starts": "<code>FA-IT-5-26</code> &nbsp;starts with this text",
+        "exact": "<code>FA-IT-5-26-0001</code> &nbsp;exactly this value",
+    }.get(mode, "")
+    return (
+        "<b>How to search</b><br>" + one + "<br>"
+        "<code>FA-IT-5-26-0001..FA-IT-5-26-0010</code> &nbsp;range (use full numbers)<br>"
+        "<code>FA-IT-5-26-0001, FA-IT-5-26-0005</code> &nbsp;exactly these<br>"
+        "Separate values with comma, semicolon or new line (paste a column from Excel).<br>"
+        "Ranges and single values can be mixed."
+    )
 
 class TickDelegate(QStyledItemDelegate):
     """Ticked rows get a light green background; column 0 shows the tick box.
@@ -425,15 +448,8 @@ class SearchPrintPage(QWidget):
         for fd in profile.searchable_fields:
             edit = QLineEdit()
             edit.setMaxLength(5000)
-            edit.setPlaceholderText("contains…  ·  A..B  ·  A, B, C")
-            edit.setToolTip(
-                "<b>How to search</b><br>"
-                "<code>FA-IT-5-26</code> &nbsp;contains this text<br>"
-                "<code>FA-IT-5-26-0001..FA-IT-5-26-0010</code> &nbsp;range (use full numbers)<br>"
-                "<code>FA-IT-5-26-0001, FA-IT-5-26-0005</code> &nbsp;exactly these<br>"
-                "Separate values with comma, semicolon or new line (paste a column from Excel).<br>"
-                "Ranges and single values can be mixed."
-            )
+            edit.setPlaceholderText(SEARCH_HINTS.get(fd.search_mode, SEARCH_HINTS["contains"]))
+            edit.setToolTip(search_tooltip(fd.search_mode))
             edit.setClearButtonEnabled(True)
             edit.returnPressed.connect(self._search)
             self.criteria_grid.addWidget(labeled(fd.label, edit), i // 2, i % 2)
@@ -491,6 +507,10 @@ class SearchPrintPage(QWidget):
             return
         criteria = {col: e.text() for col, e in self.search_inputs.items()}
         ranges = self._ranges()
+        if profile.require_criteria and not has_criteria(criteria, ranges):
+            self.search_banner.show_message("Enter at least one search value. This table is too large to list everything.", "warning")
+            next(iter(self.search_inputs.values()), self).setFocus()
+            return
         company = self.ctx.company
         self.search_btn.setEnabled(False)
         self.search_btn.setText("  Searching...")

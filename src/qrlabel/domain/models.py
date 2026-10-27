@@ -47,6 +47,7 @@ class FieldDef:
     fallback: str = ""  # "COLUMN" (main source) or "TABLE.COLUMN": used when this value is empty
     data_type: str = "string"  # string | int | decimal | date
     searchable: bool = False
+    search_mode: str = "contains"  # one value typed: contains | starts | exact (lists and A..B ranges are always exact)
     range_search: bool = False  # date fields: search by From - To
     display: bool = True
     required: bool = False
@@ -103,6 +104,7 @@ class DataProfile:
     lookups: list[LookupDef] = field(default_factory=list)
     order_by: list[str] = field(default_factory=list)
     row_limit: int = 200
+    require_criteria: bool = False  # Search & Print needs at least one search value (for very large tables)
     qr: QrConfig = field(default_factory=QrConfig)
     template_id: str = ""  # default label
     template_ids: list[str] = field(default_factory=list)  # labels allowed with this profile; empty = all (older profiles)

@@ -151,9 +151,29 @@ Facts from AX (read-only checks): InventJournalTrans has 2,008,396 rows in db1. 
 | Phase | Goal | Estimate | Depends on |
 |---|---|---|---|
 | 6 ✅ | Bind label templates to data profiles: allowed list + default; Search & Print shows only allowed labels; designer "Use with profiles"; warnings for fields a template needs | done 2026-10-27 | — |
-| 7 | Search options per field (exact / starts with / contains), "at least one search value" option, field order | 0.5–1 day | — |
+| 7 ✅ | Search options per field (exact / starts with / contains), "at least one search value" option, field order (follows Move up/down) | done 2026-10-27 | — |
 | 8 | Inventory Journal profile: related-table company = same / virtual (VIRTUALDATAAREALIST) / none, fixed-value conditions (REFTABLEID = 154), "has rows" fields; InventJournalTrans + InventDim + InventTable + JournalError; QR + template | 1.5–2 days | 6, 7, answers on label content |
 | 9 | Installer choices: role (operator / administrator) and modules (Asset / Inventory journal); hide menus and profiles; admin can change later | 1–1.5 days | 8 |
 | 10 | TE210 hardware tests, UAT, ship the fixed-QR template, release 1.0.0 | ~1 day + team testing | all (hardware tests can start now) |
 
 Out of scope: per-user login or permissions (Masterplan §15 "User Management Server"), decoding JournalError INFOLOG, and writing anything back to AX.
+
+## Phase 8 decisions (user answers + AX checks, 2026-10-27)
+
+Label (like the "STOCK" sample): `STOCK เกรด [InventSizeId]` / `รหัสสินค้า : [ItemId]  [Qty] [Unit]` / `ชื่อสินค้า : [Item name]` / `Batch No : [InventBatchId]` + Note.
+
+| Label item | AX source (checked read-only) |
+|---|---|
+| Grade (A) | INVENTDIM.INVENTSIZEID (company `vir`, by INVENTDIMID) |
+| Item code | INVENTJOURNALTRANS.ITEMID |
+| Qty | INVENTJOURNALTRANS.QTY. Transfer lines are always negative and can have decimals, so the label shows the absolute value |
+| Unit (EA / Kg) | INVENTTABLEMODULE.UNITID where MODULETYPE = 0 (Invent), company `vir` |
+| Item name | INVENTTABLE.ITEMNAME (company `vir`). INVENTDIMCOMBINATION.NAME has text for only 227 rows, so it is only used as a fallback |
+| Batch No | INVENTDIM.INVENTBATCHID |
+| Note | INVENTJOURNALTRANS.NOTES |
+| Other InventDim fields | All of them can be added (location, warehouse location, serial, config, colour) |
+
+- Transfer journals only: fixed filter JOURNALTYPE = 2. Checked: INVENTJOURNALTABLE type 2 is described as "Transfer journal".
+- Number of labels: one label per journal line. Copies = Qty is not possible because Qty can be decimal (e.g. 5.99 Kg). The user can still set copies when printing.
+- JournalError: not used for now.
+- Phase 9 addition: admin-only buttons and pages are hidden. An admin icon unlocks them after the password is entered.

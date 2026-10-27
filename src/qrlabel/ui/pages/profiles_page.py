@@ -13,6 +13,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -39,14 +40,15 @@ from ...infrastructure.ax.mock_source import MOCK_COMPANY
 from ...services.formatting import format_value
 from ...services.profile_io import duplicate_profile, export_profile, import_profile
 from ...services.profile_rules import UNSORTABLE_TYPES, ColumnMap, new_field, template_issues, validate_profile
-from ...services.query_builder import IDENT_RE, build_select, split_order
+from ...services.query_builder import IDENT_RE, SEARCH_MODES, build_select, split_order
 from ..icons import icon
 from ..widgets import Banner, Card, chip, labeled, page_header
 from ..workers import error_text, run_async
 
 TYPES = ["string", "int", "decimal", "date"]
-COLS = ["Field", "Header", "Type", "Format", "Search", "Date range", "Show", "Required", "Fallback", "From"]
-CHECK_COLS = {4: "searchable", 5: "range_search", 6: "display", 7: "required"}
+COLS = ["Field", "Header", "Type", "Format", "Search", "Search by", "Date range", "Show", "Required", "Fallback", "From"]
+CHECK_COLS = {4: "searchable", 6: "range_search", 7: "display", 8: "required"}
+MODE_COL, FALLBACK_COL, FROM_COL = 5, 9, 10
 NO_COMPANY = "__none__"
 TEST_ROWS = 20
 
@@ -395,12 +397,15 @@ class ProfilesPage(QWidget):
         sort_row.addWidget(self.sort_dir)
         self.row_limit = QSpinBox()
         self.row_limit.setRange(1, 5000)
+        self.require_criteria = QCheckBox("Search value required (operators cannot list everything)")
+        self.require_criteria.setToolTip("Turn on for very large tables, e.g. journal lines.")
         f.addRow("Name", self.name)
         f.addRow("Table / view", src_row)
         f.addRow("Schema", self.schema)
         f.addRow("Company column", self.company_col)
         f.addRow("Sort results by", sort_row)
         f.addRow("Max rows", self.row_limit)
+        f.addRow("", self.require_criteria)
         card.body.addLayout(f)
         self.browse_btn.clicked.connect(self._browse_source)
         self.name.textEdited.connect(self._changed)
@@ -408,6 +413,7 @@ class ProfilesPage(QWidget):
         for c in (self.company_col, self.sort_col, self.sort_dir):
             c.currentIndexChanged.connect(self._changed)
         self.row_limit.valueChanged.connect(self._changed)
+        self.require_criteria.toggled.connect(self._changed)
         return card
 
     def _build_labels_card(self) -> Card:
@@ -434,7 +440,7 @@ class ProfilesPage(QWidget):
         card = Card("Fields")
         self.fields_chip = chip("", gray=True)
         card.header.addWidget(self.fields_chip)
-        hint = QLabel("Header = column title on screen. Search = filter box on Search & Print. "
+        hint = QLabel("Header = column title on screen. Search = filter box on Search & Print (in this order; use Move up/down). "
                       "Fallback = column used when this one is empty (COLUMN or TABLE.COLUMN).")
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
@@ -448,7 +454,7 @@ class ProfilesPage(QWidget):
         self.table.setMinimumHeight(300)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        for col, width in ((1, 170), (2, 118), (3, 90), (8, 130)):  # editable text / combo columns
+        for col, width in ((1, 170), (2, 118), (3, 90), (MODE_COL, 118), (FALLBACK_COL, 130)):  # editable text / combo columns
             header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
             self.table.setColumnWidth(col, width)
         header.setStretchLastSection(True)
@@ -470,7 +476,7 @@ class ProfilesPage(QWidget):
         self.remove_field_btn.clicked.connect(self._remove_field)
         up.clicked.connect(lambda: self._move_field(-1))
         down.clicked.connect(lambda: self._move_field(1))
-        self.table.itemChanged.connect(lambda *_: self._changed())
+        self.table.itemChanged.connect(self._on_field_item_changed)
         return card
 
     def _build_lookups_card(self) -> Card:
@@ -630,6 +636,7 @@ class ProfilesPage(QWidget):
         self.source.setText(p.source)
         self.schema.setText(p.schema)
         self.row_limit.setValue(int(p.row_limit))
+        self.require_criteria.setChecked(bool(p.require_criteria))
         self._fill_templates()
         self._fill_lookups()
         self._fill_fields_table()
@@ -713,11 +720,27 @@ class ProfilesPage(QWidget):
             it.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
             it.setCheckState(Qt.CheckState.Checked if getattr(f, attr) else Qt.CheckState.Unchecked)
             self.table.setItem(r, col, it)
-        self.table.setItem(r, 8, QTableWidgetItem(f.fallback))
+        mode = QComboBox()
+        for key, text in SEARCH_MODES.items():
+            mode.addItem(text, key)
+        mode.setCurrentIndex(max(0, mode.findData(f.search_mode)))
+        mode.setToolTip("How one typed value is matched. Lists (A, B) and ranges (A..B) are always exact.\n"
+                        "'Starts with' and 'Exact' are much faster than 'Contains' on large tables.")
+        mode.setEnabled(f.searchable)
+        mode.currentIndexChanged.connect(lambda *_: self._changed())
+        self.table.setCellWidget(r, MODE_COL, mode)
+        self.table.setItem(r, FALLBACK_COL, QTableWidgetItem(f.fallback))
         src = QTableWidgetItem(f.table or "main")
         src.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
         src.setForeground(QColor("#64748B"))
-        self.table.setItem(r, 9, src)
+        self.table.setItem(r, FROM_COL, src)
+
+    def _on_field_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() == 4:  # "Search by" only matters when Search is ticked
+            mode = self.table.cellWidget(item.row(), MODE_COL)
+            if mode is not None:
+                mode.setEnabled(item.checkState() == Qt.CheckState.Checked)
+        self._changed()
 
     def _read_fields(self) -> list[FieldDef]:
         out = []
@@ -728,7 +751,8 @@ class ProfilesPage(QWidget):
             f.fmt = (self.table.item(r, 3).text() if self.table.item(r, 3) else "").strip()
             for col, attr in CHECK_COLS.items():
                 setattr(f, attr, self.table.item(r, col).checkState() == Qt.CheckState.Checked)
-            f.fallback = (self.table.item(r, 8).text() if self.table.item(r, 8) else "").strip().upper()
+            f.search_mode = self.table.cellWidget(r, MODE_COL).currentData() or "contains"
+            f.fallback = (self.table.item(r, FALLBACK_COL).text() if self.table.item(r, FALLBACK_COL) else "").strip().upper()
             out.append(f)
         return out
 
@@ -857,6 +881,7 @@ class ProfilesPage(QWidget):
         sort = self.sort_col.currentData()
         p.order_by = [f"{sort} {self.sort_dir.currentData()}" if self.sort_dir.currentData() == "DESC" else sort] if sort else []
         p.row_limit = self.row_limit.value()
+        p.require_criteria = self.require_criteria.isChecked()
         p.template_id = self.template.currentData() or ""
         ticked = self._ticked_templates()
         everything = [t.id for t in getattr(self, "all_templates", [])]

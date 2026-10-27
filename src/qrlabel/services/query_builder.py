@@ -30,12 +30,13 @@ _RANGE_RE = re.compile(r"\s*\.{2,}\s*")
 class TextFilter:
     """Parsed search box.
 
-    "abc"            -> contains "abc"
+    "abc"            -> contains "abc" (or starts with / equals it, depending on the field's search mode)
     "A..B"           -> A <= value <= B
     "A, B; C" / lines -> exact values (each piece may also be a range)
     """
 
     contains: str | None = None
+    prefix: str | None = None
     exact: tuple[str, ...] = ()
     ranges: tuple[tuple[str, str], ...] = ()
 
@@ -44,12 +45,19 @@ class TextFilter:
         v = str(value if value is not None else "").strip().upper()
         if self.contains is not None:
             return self.contains.upper() in v
+        if self.prefix is not None:
+            return v.startswith(self.prefix.upper())
         if v in {e.upper() for e in self.exact}:
             return True
         return any(a.upper() <= v <= b.upper() for a, b in self.ranges)
 
 
-def parse_text_filter(text: str, label: str = "Search") -> TextFilter | None:
+SEARCH_MODES = {"contains": "Contains", "starts": "Starts with", "exact": "Exact"}
+
+
+def parse_text_filter(text: str, label: str = "Search", mode: str = "contains") -> TextFilter | None:
+    if mode not in SEARCH_MODES:
+        raise ValidationError(f"'{label}': unknown search mode {mode!r}.")
     text = (text or "").strip()
     if not text:
         return None
@@ -73,8 +81,10 @@ def parse_text_filter(text: str, label: str = "Search") -> TextFilter | None:
             ranges.append((a, b))
         else:
             exact.append(p)
-    if len(pieces) == 1 and exact:
+    if len(pieces) == 1 and exact and mode == "contains":
         return TextFilter(contains=exact[0])
+    if len(pieces) == 1 and exact and mode == "starts":
+        return TextFilter(prefix=exact[0])
     return TextFilter(exact=tuple(dict.fromkeys(exact)), ranges=tuple(ranges))
 
 
@@ -98,6 +108,18 @@ def check_range_field(profile: DataProfile, column: str):
     if fd is None or not fd.range_search or fd.data_type != "date":
         raise ValidationError(f"Field '{column}' does not allow date-range search in this profile.")
     return fd
+
+
+def has_criteria(criteria: dict[str, str] | None, ranges: dict[str, DateRange] | None = None) -> bool:
+    return any((t or "").strip() for t in (criteria or {}).values()) or any(
+        a is not None or b is not None for a, b in (ranges or {}).values()
+    )
+
+
+def check_required_criteria(profile: DataProfile, criteria, ranges=None) -> None:
+    if profile.require_criteria and not has_criteria(criteria, ranges):
+        names = ", ".join(f.label for f in profile.searchable_fields + profile.range_fields) or "a search box"
+        raise ValidationError(f"Enter at least one search value ({names}).")
 
 
 def in_range(value: Any, rng: DateRange) -> bool:
@@ -187,6 +209,7 @@ def build_select(
     select_cols = [f"{expr(f)} AS {quote_ident(f.column)}" for f in profile.fields]
     where: list[str] = []
     params: list[Any] = []
+    check_required_criteria(profile, criteria, ranges)
 
     if profile.dataarea_column:
         company = (company or "").strip()
@@ -203,11 +226,15 @@ def build_select(
         fd = profile.get_field(column)
         if fd is None or not fd.searchable:
             raise ValidationError(f"Field '{column}' is not searchable in this profile.")
-        flt = parse_text_filter(text, fd.label)
+        flt = parse_text_filter(text, fd.label, fd.search_mode)
         q = expr(fd)
         if flt.contains is not None:
             where.append(f"{q} LIKE ? ESCAPE '\\'")
             params.append(f"%{escape_like(flt.contains)}%")
+            continue
+        if flt.prefix is not None:  # "starts with" can use an index, much faster on big tables
+            where.append(f"{q} LIKE ? ESCAPE '\\'")
+            params.append(f"{escape_like(flt.prefix)}%")
             continue
         alternatives: list[str] = []
         if flt.exact:
