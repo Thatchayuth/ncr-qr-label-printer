@@ -17,6 +17,7 @@ from qrcode.constants import ERROR_CORRECT_H, ERROR_CORRECT_L, ERROR_CORRECT_M, 
 
 from ..domain.layout import mm_to_dots
 from ..domain.models import LabelElement, LabelTemplate
+from .images import decode_image
 
 ECC_LEVELS = {"L": ERROR_CORRECT_L, "M": ERROR_CORRECT_M, "Q": ERROR_CORRECT_Q, "H": ERROR_CORRECT_H}
 
@@ -150,6 +151,22 @@ def rasterize_text(text: str, el: LabelElement, dpi: int) -> tuple[Placed, bool]
     return Placed(_rotate(_to_1bit(gray), el.rotation), x0, y0), overflow
 
 
+def rasterize_image(el: LabelElement, dpi: int) -> Placed:
+    """Fit the image inside the element box (keeps aspect ratio, centred), then make it black/white."""
+    w, h = max(1, mm_to_dots(el.w_mm, dpi)), max(1, mm_to_dots(el.h_mm, dpi))
+    src = decode_image(el.image_data)
+    scale = min(w / src.width, h / src.height)
+    nw, nh = max(1, round(src.width * scale)), max(1, round(src.height * scale))
+    fitted = src.resize((nw, nh), Image.Resampling.LANCZOS)
+    if el.dither:
+        mono = fitted.convert("1")  # Floyd-Steinberg: better for photos and grey tones
+    else:
+        mono = _to_1bit(fitted)  # hard cut at 50%: crisp logos and line art
+    box = Image.new("1", (w, h), 1)
+    box.paste(mono, ((w - nw) // 2, (h - nh) // 2))
+    return Placed(_rotate(box, el.rotation), mm_to_dots(el.x_mm, dpi), mm_to_dots(el.y_mm, dpi))
+
+
 def rasterize_shape(el: LabelElement, dpi: int) -> Placed:
     w, h = mm_to_dots(el.w_mm, dpi), mm_to_dots(el.h_mm, dpi)
     t = max(1, mm_to_dots(el.thickness_mm, dpi))
@@ -185,6 +202,13 @@ def rasterize_element(
         return placed, warnings
     if el.kind in ("rect", "line"):
         return rasterize_shape(el, t.dpi), warnings
+    if el.kind == "image":
+        if not el.image_data:
+            return None, [f"{name}: no image selected"]
+        try:
+            return rasterize_image(el, t.dpi), warnings
+        except Exception as e:  # damaged image data must not stop the rest of the label
+            return None, [f"{name}: {e}"]
     return None, [f"{name}: unsupported element type '{el.kind}'"]
 
 

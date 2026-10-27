@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Label Designer: Image element for logos/pictures (PNG/JPG/BMP/GIF; stored in the template; fitted with aspect ratio; black/white or dithered), Alt+6.
+- Label Designer: smart guides - while dragging, an element snaps to the label centre and to other elements' centres, shown with pink guide lines.
+
 - QR content now matches the previous application: one "Label : value" per line (Asset code, Name, Acquisition date, Acquisition, Department, Purchase order), CR+LF between lines, error correction L. New QR format "Labeled lines" with editable QR labels and separators in QR Configuration.
 - Warning when QR dots are smaller than 3 printer dots (hard to scan) in preview, designer and print.
 

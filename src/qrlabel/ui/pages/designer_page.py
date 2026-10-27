@@ -31,6 +31,8 @@ from ...app.defaults import default_asset_template
 from ...domain.layout import TE200_MAX_PRINT_WIDTH_MM, validate_template
 from ...domain.models import DataProfile, LabelElement, LabelTemplate, new_id
 from ...services.formatting import build_label_values
+from ...rendering.images import SUPPORTED as SUPPORTED_IMAGES
+from ...rendering.images import load_image_file
 from ...services.template_io import duplicate_template, export_template, import_template
 from ..designer.canvas import ElementItem, LabelScene, LabelView, footprint
 from ..icons import icon
@@ -55,6 +57,7 @@ def _tool_button(text: str, icon_name: str, tip: str) -> QPushButton:
     b.setIcon(icon(icon_name, "#334155", size=16))
     b.setIconSize(QSize(16, 16))
     b.setToolTip(tip)
+    b.setStyleSheet("QPushButton { padding: 6px 9px; }")
     return b
 
 
@@ -165,6 +168,7 @@ class DesignerPage(QWidget):
             ("QR", "qr", "QR code - content from QR Configuration (Alt+3)", "qr"),
             ("Box", "layout", "Rectangle (Alt+4)", "rect"),
             ("Line", "minus", "Horizontal line (Alt+5)", "line"),
+            ("Image", "image", "Picture or logo from a file (Alt+6)", "image"),
         ]:
             b = _tool_button(text, ic, tip)
             b.clicked.connect(lambda _=False, k=kind: self._add_element(k))
@@ -336,8 +340,18 @@ class DesignerPage(QWidget):
         f.addRow("", self.e_fit)
         f.addRow("Align", self.e_align)
         f.addRow("Line thickness", self.e_thick)
+        self.e_image_btn = QPushButton("Replace image...")
+        self.e_dither = QCheckBox("Dither grey tones (photos)")
+        self.e_dither.setToolTip("On: grey tones become dot patterns (photos).\nOff: sharp black/white (logos, line art).")
+        self.IMAGE_ROW = f.rowCount()
+        f.addRow("Image", self.e_image_btn)
+        self.DITHER_ROW = f.rowCount()
+        f.addRow("", self.e_dither)
+        self.e_image_btn.clicked.connect(self._replace_image)
+        self.e_dither.toggled.connect(self._on_element_edit)
         f.addRow("Name", self.e_name)
-        self.e_lock = QCheckBox("Locked (cannot be moved on the canvas)")
+        self.e_lock = QCheckBox("Locked")
+        self.e_lock.setToolTip("Locked layers cannot be moved or resized on the canvas (Ctrl+L)")
         f.addRow("", self.e_lock)
         self.e_lock.toggled.connect(self._on_element_edit)
         self.el_form = f
@@ -573,6 +587,7 @@ class DesignerPage(QWidget):
             ("Alt+3", "Add QR", lambda: self._add_element("qr")),
             ("Alt+4", "Add Box", lambda: self._add_element("rect")),
             ("Alt+5", "Add Line", lambda: self._add_element("line")),
+            ("Alt+6", "Add Image", lambda: self._add_element("image")),
             ("Alt+H", "Center horizontally", lambda: self._align_to(1)),
             ("Alt+V", "Center vertically", lambda: self._align_to(2)),
             ("Ctrl+0", "Fit label to window", self.view.fit),
@@ -672,13 +687,13 @@ class DesignerPage(QWidget):
         if el.kind == "text":
             text = " ".join(el.text.split())
             return f"Text · {text[:24]}" if text else "Text"
-        return {"qr": "QR code", "rect": "Box", "line": "Line"}.get(el.kind, el.kind)
+        return {"qr": "QR code", "rect": "Box", "line": "Line", "image": "Image"}.get(el.kind, el.kind)
 
     def _refresh_layers(self) -> None:
         if not self.template:
             return
         self._syncing = True
-        icons = {"qr": "qr", "rect": "layout", "line": "minus"}
+        icons = {"qr": "qr", "rect": "layout", "line": "minus", "image": "image"}
         self.layers.clear()
         selected = {id(i.el) for i in self.items if i.isSelected()}
         for el in reversed(self.template.elements):  # top of the list = in front
@@ -893,6 +908,27 @@ class DesignerPage(QWidget):
         sel = [i for i in self.items if i.isSelected()]
         return sel[0] if len(sel) == 1 else None
 
+    def _pick_image(self) -> tuple[str, int, int] | None:
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a picture or logo", "", f"Images ({SUPPORTED_IMAGES})")
+        if not path:
+            return None
+        try:
+            return load_image_file(Path(path))
+        except Exception as e:
+            self.banner.show_message(error_text(e), "error")
+            return None
+
+    def _replace_image(self) -> None:
+        item = self.selected_item()
+        if not item or item.el.kind != "image":
+            return
+        picked = self._pick_image()
+        if not picked:
+            return
+        item.el.image_data = picked[0]
+        item.refresh()
+        self._changed()
+
     def _add_element(self, kind: str) -> None:
         t = self.template
         if not t:
@@ -909,6 +945,16 @@ class DesignerPage(QWidget):
             el = LabelElement(kind="qr", x_mm=m, y_mm=m, w_mm=s, h_mm=s)
         elif kind == "rect":
             el = LabelElement(kind="rect", x_mm=m, y_mm=m, w_mm=inner_w, h_mm=max(1.0, t.height_mm - 2 * m), thickness_mm=0.3)
+        elif kind == "image":
+            picked = self._pick_image()
+            if not picked:
+                return
+            data, pw, ph = picked
+            inner_h = max(1.0, t.height_mm - 2 * m)
+            w = min(12.0, inner_w)
+            h = min(inner_h, w * ph / pw)
+            w = round(h * pw / ph, 1)  # keep the picture's shape
+            el = LabelElement(kind="image", x_mm=m, y_mm=m, w_mm=w, h_mm=round(h, 1), image_data=data)
         else:
             el = LabelElement(kind="line", x_mm=m, y_mm=t.height_mm / 2, w_mm=inner_w, h_mm=0, thickness_mm=0.3)
         t.elements.append(el)
@@ -986,7 +1032,7 @@ class DesignerPage(QWidget):
 
     def _fill_element_form(self, el: LabelElement) -> None:
         self._loading = True
-        kinds = {"text": "Field" if el.field else "Text", "qr": "QR code", "rect": "Box", "line": "Line"}
+        kinds = {"text": "Field" if el.field else "Text", "qr": "QR code", "rect": "Box", "line": "Line", "image": "Image"}
         self.el_kind_chip.setText(kinds.get(el.kind, el.kind))
         self.el_kind_chip.show()
         self.e_x.setValue(el.x_mm)
@@ -1003,7 +1049,10 @@ class DesignerPage(QWidget):
         self.e_thick.setValue(el.thickness_mm)
         self.e_name.setText(el.name)
         self.e_lock.setChecked(el.locked)
+        self.e_dither.setChecked(el.dither)
         is_text, is_shape = el.kind == "text", el.kind in ("rect", "line")
+        self.el_form.setRowVisible(self.IMAGE_ROW, el.kind == "image")
+        self.el_form.setRowVisible(self.DITHER_ROW, el.kind == "image")
         self.el_form.setRowVisible(self.e_source, is_text)
         self.el_form.setRowVisible(self.e_text, is_text and not el.field)
         self.el_form.setRowVisible(self.FONT_ROW, is_text)
@@ -1029,7 +1078,8 @@ class DesignerPage(QWidget):
         el.auto_fit = self.e_fit.isChecked()
         el.align = self.e_align.currentData()
         el.thickness_mm = self.e_thick.value()
-        renamed = el.name != self.e_name.text().strip() or el.locked != self.e_lock.isChecked()
+        el.dither = self.e_dither.isChecked()
+        renamed =el.name != self.e_name.text().strip() or el.locked != self.e_lock.isChecked()
         el.name = self.e_name.text().strip()
         el.locked = self.e_lock.isChecked()
         item.apply_lock()

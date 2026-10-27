@@ -19,6 +19,29 @@ from ..widgets import pil_to_pixmap
 
 HANDLE_MM = 1.4
 SELECT_COLOR = QColor("#2563EB")
+GUIDE_COLOR = QColor("#EC4899")
+GUIDE_SNAP_PX = 7  # screen pixels: how close a centre must be to snap onto a guide
+
+
+def smart_guides(
+    x: float, y: float, w: float, h: float, targets_x: list[float], targets_y: list[float], tol: float
+) -> tuple[float, float, list[float], list[float]]:
+    """Snap the element's centre onto the nearest target line within `tol` mm.
+
+    Returns the (possibly moved) top-left position and the guide lines to draw.
+    """
+    vlines: list[float] = []
+    hlines: list[float] = []
+    cx, cy = x + w / 2, y + h / 2
+    best_x = min(targets_x, key=lambda t: abs(t - cx), default=None)
+    if best_x is not None and abs(best_x - cx) <= tol:
+        x = best_x - w / 2
+        vlines.append(best_x)
+    best_y = min(targets_y, key=lambda t: abs(t - cy), default=None)
+    if best_y is not None and abs(best_y - cy) <= tol:
+        y = best_y - h / 2
+        hlines.append(best_y)
+    return x, y, vlines, hlines
 
 
 def footprint(el: LabelElement) -> tuple[float, float]:
@@ -42,6 +65,7 @@ class ElementItem(QGraphicsObject):
         self._pix: QPixmap | None = None
         self._pix_rect = QRectF()
         self._resizing = False
+        self._dragging = False  # True while the mouse moves the item (smart guides active)
         self.bypass_snap = False  # exact moves from the property panel / arrow keys
         self.warnings: list[str] = []
         self.setFlags(
@@ -136,9 +160,24 @@ class ElementItem(QGraphicsObject):
             if self.bypass_snap:
                 step = 0
             fw, fh = footprint(self.el)
-            x = min(max(snap(value.x(), step), 0.0), max(0.0, template.width_mm - fw))
-            y = min(max(snap(value.y(), step), 0.0), max(0.0, template.height_mm - fh))
-            return QPointF(x, y)
+            x, y = snap(value.x(), step), snap(value.y(), step)
+            scene = self.scene()
+            if self._dragging and isinstance(scene, LabelScene):
+                tx, ty = [template.width_mm / 2], [template.height_mm / 2]  # label centre
+                for other in scene.items():
+                    if isinstance(other, ElementItem) and other is not self and not other.isSelected():
+                        ow, oh = footprint(other.el)
+                        tx.append(other.pos().x() + ow / 2)
+                        ty.append(other.pos().y() + oh / 2)
+                x, y, vl, hl = smart_guides(value.x(), value.y(), fw, fh, tx, ty, scene.snap_tolerance_mm())
+                if not vl:
+                    x = snap(value.x(), step)
+                if not hl:
+                    y = snap(value.y(), step)
+                scene.set_guides(vl, hl)
+            x = min(max(x, 0.0), max(0.0, template.width_mm - fw))
+            y = min(max(y, 0.0), max(0.0, template.height_mm - fh))
+            return QPointF(round(x, 2), round(y, 2))
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self.el.x_mm, self.el.y_mm = round(self.pos().x(), 2), round(self.pos().y(), 2)
             self.changed.emit(self)
@@ -161,6 +200,8 @@ class ElementItem(QGraphicsObject):
 
     def mouseMoveEvent(self, event) -> None:
         if not self._resizing:
+            # guides only for a single element: several items snapping on their own would drift apart
+            self._dragging = not self.el.locked and not self._co_selected()
             super().mouseMoveEvent(event)
             return
         template, *_, step = self._ctx()
@@ -183,11 +224,20 @@ class ElementItem(QGraphicsObject):
         self.changed.emit(self)
 
     def mouseReleaseEvent(self, event) -> None:
+        self._dragging = False
+        if isinstance(self.scene(), LabelScene):
+            self.scene().set_guides([], [])
         if self._resizing:
             self._resizing = False
             event.accept()
             return
         super().mouseReleaseEvent(event)
+
+    def _co_selected(self) -> list["ElementItem"]:
+        scene = self.scene()
+        if scene is None:
+            return []
+        return [i for i in scene.selectedItems() if isinstance(i, ElementItem) and i is not self]
 
 
 class LabelScene(QGraphicsScene):
@@ -198,6 +248,40 @@ class LabelScene(QGraphicsScene):
         self.template: LabelTemplate | None = None
         self.show_grid = True
         self.grid_step = 1.0
+        self.guides_v: list[float] = []
+        self.guides_h: list[float] = []
+
+    def set_guides(self, vertical: list[float], horizontal: list[float]) -> None:
+        if vertical != self.guides_v or horizontal != self.guides_h:
+            self.guides_v, self.guides_h = list(vertical), list(horizontal)
+            self.update()
+
+    def snap_tolerance_mm(self) -> float:
+        views = self.views()
+        px_per_mm = views[0].transform().m11() if views else 4.0
+        return GUIDE_SNAP_PX / max(px_per_mm, 0.1)
+
+    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
+        if not self.template or not (self.guides_v or self.guides_h):
+            return
+        t = self.template
+        pen = QPen(GUIDE_COLOR, 0, Qt.PenStyle.DashLine)
+        pen.setCosmetic(True)
+        pen.setWidth(1)
+        painter.setPen(pen)
+        for x in self.guides_v:
+            painter.drawLine(QPointF(x, -2.0), QPointF(x, t.height_mm + 2.0))
+        for y in self.guides_h:
+            painter.drawLine(QPointF(-2.0, y), QPointF(t.width_mm + 2.0, y))
+        # small marker when the element sits exactly on the label centre
+        cx, cy = t.width_mm / 2, t.height_mm / 2
+        painter.setBrush(GUIDE_COLOR)
+        for x in self.guides_v:
+            if abs(x - cx) < 1e-6:
+                painter.drawEllipse(QPointF(x, -1.2), 0.5, 0.5)
+        for y in self.guides_h:
+            if abs(y - cy) < 1e-6:
+                painter.drawEllipse(QPointF(-1.2, y), 0.5, 0.5)
 
     def set_template(self, t: LabelTemplate) -> None:
         self.template = t

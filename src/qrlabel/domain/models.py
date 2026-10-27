@@ -140,7 +140,7 @@ class DataProfile:
 
 @dataclass
 class LabelElement:
-    kind: str  # text | qr | rect | line
+    kind: str  # text | qr | rect | line | image
     x_mm: float
     y_mm: float
     w_mm: float
@@ -156,6 +156,8 @@ class LabelElement:
     thickness_mm: float = 0.3
     name: str = ""
     locked: bool = False  # designer only: cannot be moved / resized on the canvas
+    image_data: str = ""  # image: base64 PNG stored inside the template
+    dither: bool = False  # image: dither grey tones (photos) instead of a hard black/white cut (logos)
 
 
 @dataclass

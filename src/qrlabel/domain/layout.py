@@ -8,7 +8,7 @@ TE200_DPI = 203
 TE200_MAX_PRINT_WIDTH_MM = 108.0
 TE200_MAX_PRINT_LENGTH_MM = 2794.0
 
-VALID_KINDS = {"text", "qr", "rect", "line"}
+VALID_KINDS = {"text", "qr", "rect", "line", "image"}
 VALID_ROTATIONS = {0, 90, 180, 270}
 
 
@@ -58,4 +58,6 @@ def validate_template(t: LabelTemplate) -> list[str]:
             issues.append(f"{label}: outside printable area (margin {m} mm).")
         if e.kind == "text" and e.font_mm <= 0:
             issues.append(f"{label}: font size must be greater than 0.")
+        if e.kind == "image" and not e.image_data:
+            issues.append(f"{label}: no image selected.")
     return issues
