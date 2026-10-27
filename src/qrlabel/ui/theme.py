@@ -85,6 +85,25 @@ QScrollBar::handle:horizontal { background: #CBD5E1; border-radius: 3px; min-wid
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 
+/* --------------------------------------------------------------- calendar */
+QCalendarWidget#NiceCalendar { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; }
+#NiceCalendar QWidget#qt_calendar_navigationbar { background: #FFFFFF; border-bottom: 1px solid #E2E8F0;
+                                                   min-height: 40px; padding: 2px 6px; }
+#NiceCalendar QToolButton { color: #0F172A; background: transparent; border: none; border-radius: 6px;
+                            padding: 4px 8px; font-weight: 600; }
+#NiceCalendar QToolButton:hover { background: #F1F5F9; }
+#NiceCalendar QToolButton::menu-indicator { image: none; width: 0; }
+#NiceCalendar QSpinBox { border: 1px solid #CBD5E1; border-radius: 6px; padding: 2px 6px; min-height: 22px; }
+#NiceCalendar QMenu { background: #FFFFFF; border: 1px solid #E2E8F0; }
+#NiceCalendar QMenu::item { padding: 5px 18px; }
+#NiceCalendar QMenu::item:selected { background: #EFF6FF; color: #0F172A; }
+#NiceCalendar QTableView { border: none; background: #FFFFFF; alternate-background-color: #FFFFFF; outline: 0;
+                           selection-background-color: #2563EB; selection-color: #FFFFFF; }
+#NiceCalendar QTableView::item { padding: 0; margin: 2px; border-radius: 8px; }
+#NiceCalendar QTableView::item:hover { background: #EFF6FF; }
+#NiceCalendar QTableView::item:selected { background: #2563EB; color: #FFFFFF; }
+#NiceCalendar QAbstractItemView:disabled { color: #CBD5E1; }
+
 QCheckBox { spacing: 8px; }
 QToolTip { background: #0F172A; color: #F8FAFC; border: none; padding: 6px 8px; }
 """

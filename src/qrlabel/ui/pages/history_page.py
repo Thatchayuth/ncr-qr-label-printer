@@ -33,7 +33,7 @@ from ...app.context import AppContext
 from ...domain.models import PrintJob, PrintStatus
 from ..icons import icon
 from ..theme import STATUS_COLORS
-from ..widgets import Banner, Card, chip, labeled, page_header
+from ..widgets import Banner, Card, chip, labeled, nice_calendar, page_header
 from ..workers import error_text, run_async
 
 COLUMNS = ["Time", "Asset", "Status", "Type", "Copies", "Printer", "User", "Template", "Note"]
@@ -144,7 +144,7 @@ class HistoryPage(QWidget):
         self.date_on.setChecked(True)
         self.d_from, self.d_to = QDateEdit(today.addDays(-6)), QDateEdit(today)
         for d in (self.d_from, self.d_to):
-            d.setCalendarPopup(True)
+            nice_calendar(d)
             d.setDisplayFormat("dd/MM/yyyy")
             d.setMinimumWidth(130)
         self.date_on.toggled.connect(self.d_from.setEnabled)

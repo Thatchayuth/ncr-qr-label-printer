@@ -99,6 +99,42 @@ def chip(text: str = "", gray: bool = False) -> QLabel:
     return c
 
 
+def nice_calendar(edit) -> None:
+    """Give a QDateEdit a clean calendar popup (styled by #NiceCalendar in the theme)."""
+    from PySide6.QtCore import QDate, QSize
+    from PySide6.QtGui import QFont, QTextCharFormat
+    from PySide6.QtWidgets import QCalendarWidget, QToolButton
+
+    from .icons import icon
+
+    cal = QCalendarWidget()
+    cal.setObjectName("NiceCalendar")
+    cal.setGridVisible(False)
+    cal.setVerticalHeaderFormat(QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+    cal.setHorizontalHeaderFormat(QCalendarWidget.HorizontalHeaderFormat.ShortDayNames)
+    head = QTextCharFormat()
+    head.setForeground(QColor("#64748B"))
+    head.setFontWeight(QFont.Weight.DemiBold)
+    cal.setHeaderTextFormat(head)
+    weekend = QTextCharFormat()
+    weekend.setForeground(QColor("#E11D48"))
+    for day in (Qt.DayOfWeek.Saturday, Qt.DayOfWeek.Sunday):
+        cal.setWeekdayTextFormat(day, weekend)
+    today = QTextCharFormat()
+    today.setForeground(QColor("#2563EB"))
+    today.setFontWeight(QFont.Weight.Bold)
+    today.setFontUnderline(True)
+    cal.setDateTextFormat(QDate.currentDate(), today)
+    for name, ic in (("qt_calendar_prevmonth", "chevron-left"), ("qt_calendar_nextmonth", "chevron-right")):
+        b = cal.findChild(QToolButton, name)
+        if b is not None:
+            b.setIcon(icon(ic, "#334155", size=18))
+            b.setIconSize(QSize(18, 18))
+    cal.setMinimumSize(320, 290)
+    edit.setCalendarPopup(True)
+    edit.setCalendarWidget(cal)
+
+
 def pil_to_pixmap(img: Image.Image) -> QPixmap:
     rgb = img.convert("RGB")
     data = rgb.tobytes("raw", "RGB")

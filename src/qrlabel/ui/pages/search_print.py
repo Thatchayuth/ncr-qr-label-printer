@@ -33,7 +33,7 @@ from ...infrastructure.ax.mock_source import MOCK_COMPANY
 from ...rendering.raster import render_label_image
 from ...services.formatting import build_label_values, format_value
 from ..icons import icon, pixmap
-from ..widgets import Banner, Card, chip, labeled, page_header, pil_to_pixmap, sticker_pixmap
+from ..widgets import Banner, Card, chip, labeled, nice_calendar, page_header, pil_to_pixmap, sticker_pixmap
 from ..workers import error_text, run_async
 
 PREVIEW_W, PREVIEW_H = 360, 270
@@ -459,7 +459,7 @@ class SearchPrintPage(QWidget):
         today = QDate.currentDate()
         start, end = QDateEdit(QDate(today.year(), today.month(), 1)), QDateEdit(today)
         for d in (start, end):
-            d.setCalendarPopup(True)
+            nice_calendar(d)
             d.setDisplayFormat("dd/MM/yyyy")
             d.setEnabled(False)
             d.setMinimumWidth(140)
