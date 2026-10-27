@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The installer ships the label template "New label" (38.1 × 38.1 mm, from v14 on the design PC). A new installation uses it as the default template for the Asset profile.
+
 - Label Designer: Image element for logos/pictures (PNG/JPG/BMP/GIF; stored in the template; fitted with aspect ratio; black/white or dithered), Alt+6.
 - Label Designer: smart guides - while dragging, an element snaps to the label centre and to other elements' centres, shown with pink guide lines.
 

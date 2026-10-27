@@ -13,6 +13,33 @@ DEFAULT_PROFILE_ID = "asset"
 DEFAULT_TEMPLATE_ID = "asset-qr-sample-40x30"
 
 
+def bundled_templates() -> tuple[list[LabelTemplate], str]:
+    """Label templates shipped with the app (resources/templates) and the id of the default one.
+
+    To change them: export the template from the Label Designer, replace the JSON file
+    in src/qrlabel/resources/templates, update index.json and rebuild the installer.
+    """
+    import json
+    import logging
+
+    from ..services.template_io import read_template_file
+    from .paths import resource_path
+
+    folder = resource_path("templates")
+    index_file = folder / "index.json"
+    if not index_file.exists():
+        return [], ""
+    try:
+        index = json.loads(index_file.read_text(encoding="utf-8"))
+        templates = [read_template_file(folder / name) for name in index.get("files", [])]
+    except Exception:  # a broken bundle must not stop the app; fall back to the sample template
+        logging.getLogger(__name__).exception("Cannot load bundled label templates")
+        return [], ""
+    ids = {t.id for t in templates}
+    default = index.get("default") if index.get("default") in ids else (templates[0].id if templates else "")
+    return templates, default
+
+
 def default_asset_qr() -> QrConfig:
     """Same QR text as the previous application, e.g.
 

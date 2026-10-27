@@ -1,0 +1,7 @@
+{
+  "_comment": "Label templates installed on first run. 'default' is used by the Asset data profile.",
+  "default": "985aa6dd0dda40c68aaff4fcf1b27d85",
+  "files": [
+    "new-label.json"
+  ]
+}

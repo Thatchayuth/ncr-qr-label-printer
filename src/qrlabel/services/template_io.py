@@ -22,6 +22,14 @@ def export_template(t: LabelTemplate, path: Path) -> None:
 
 def import_template(path: Path) -> LabelTemplate:
     """Read a template file. The result always gets a new id so nothing is overwritten."""
+    t = read_template_file(path)
+    t.id = new_id()
+    t.version = 1
+    return t
+
+
+def read_template_file(path: Path) -> LabelTemplate:
+    """Read and validate a template file, keeping its id (used for templates shipped with the app)."""
     if path.stat().st_size > MAX_FILE_BYTES:
         raise ValidationError("Template file is too large.")
     try:
@@ -40,7 +48,8 @@ def import_template(path: Path) -> LabelTemplate:
     problems = validate_template(t)
     if problems:
         raise ValidationError("Template file is invalid: " + "; ".join(problems))
-    t.id = new_id()
+    if not t.id or len(t.id) > 64:
+        t.id = new_id()
     t.version = 1
     return t
 

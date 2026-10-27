@@ -25,7 +25,7 @@ from ..services.admin_auth import AdminAuth
 from ..services.print_service import PrintService
 from ..services.qr_payload import QrPayloadBuilder
 from . import paths
-from .defaults import default_asset_profile, default_asset_template
+from .defaults import bundled_templates, default_asset_profile, default_asset_template
 
 log = logging.getLogger(__name__)
 
@@ -48,12 +48,22 @@ class AppContext:
         self._seed()
 
     def _seed(self) -> None:
-        if not self.profiles.list_latest():
-            self.profiles.save(default_asset_profile())
-            log.info("Seeded default Asset data profile")
+        """First run: install the label templates shipped with the app and the Asset data profile."""
+        default_template_id = ""
         if not self.templates.list_latest():
-            self.templates.save(default_asset_template())
-            log.info("Seeded SAMPLE label template")
+            bundled, default_template_id = bundled_templates()
+            for t in bundled:
+                self.templates.save(t)
+                log.info("Installed bundled label template '%s' (%s)", t.name, t.id)
+            if not bundled:
+                self.templates.save(default_asset_template())
+                log.info("Seeded SAMPLE label template")
+        if not self.profiles.list_latest():
+            profile = default_asset_profile()
+            if default_template_id:
+                profile.template_id = default_template_id
+            self.profiles.save(profile)
+            log.info("Seeded default Asset data profile (template %s)", profile.template_id)
 
     def save_config(self) -> None:
         self.config_service.save(self.config)
