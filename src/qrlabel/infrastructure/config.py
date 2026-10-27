@@ -30,7 +30,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "use_mock": True,
         "server": "",
         "database": "",
-        "driver": "ODBC Driver 17 for SQL Server",
+        "driver": "",  # "" = best installed driver (ax.sql_server.choose_driver)
         "auth": "sql",  # sql | windows
         "username": "",
         "password_dpapi": "",

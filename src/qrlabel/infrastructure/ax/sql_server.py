@@ -26,8 +26,51 @@ _FRIENDLY = {
     "42S02": "The table or view does not exist, or the login cannot read it.",
     "42S22": "A configured column does not exist in the table.",
     "42000": "The database refused the request (permission or syntax).",
-    "IM002": "The selected ODBC driver is not installed on this computer.",
+    "IM002": "No SQL Server ODBC driver could be used on this computer. Install 'ODBC Driver 17 for SQL Server' "
+             "(or newer) from Microsoft, or ask ICT.",
 }
+
+
+# Best first. "SQL Server" is built into every Windows, so there is always one to fall back to;
+# it was checked against the AX database (assets, journal, Thai text, companies) with the same results.
+PREFERRED_DRIVERS = [
+    "ODBC Driver 18 for SQL Server",
+    "ODBC Driver 17 for SQL Server",
+    "ODBC Driver 13.1 for SQL Server",
+    "ODBC Driver 13 for SQL Server",
+    "ODBC Driver 11 for SQL Server",
+    "SQL Server Native Client 11.0",
+    "SQL Server Native Client 10.0",
+    "SQL Server",
+]
+AUTO_DRIVER = ""  # settings value meaning "best installed driver"
+
+
+def installed_sql_drivers() -> list[str]:
+    try:
+        import pyodbc
+
+        return [d for d in pyodbc.drivers() if "SQL Server" in d]
+    except Exception:
+        return []
+
+
+def choose_driver(configured: str, installed: list[str] | None = None) -> str:
+    """The configured driver when it is installed, otherwise the best installed one.
+
+    A PC without "ODBC Driver 17" (the old default) then still connects, e.g. with the built-in
+    "SQL Server" driver, instead of failing with "driver not installed".
+    """
+    installed = installed_sql_drivers() if installed is None else installed
+    configured = (configured or "").strip()
+    if configured and configured in installed:
+        return configured
+    for name in PREFERRED_DRIVERS:
+        if name in installed:
+            return name
+    if installed:
+        return installed[0]
+    return configured or "SQL Server"
 
 
 def _odbc_value(value: str) -> str:
@@ -51,12 +94,20 @@ class SqlServerDataSource:
         self.approved_sources = approved_sources
         self._columns_cache: dict[tuple[str, str], list[tuple[str, str]]] = {}
 
+    @property
+    def driver(self) -> str:
+        chosen = choose_driver(self.s.get("driver", AUTO_DRIVER))
+        if chosen != (self.s.get("driver") or "") and not getattr(self, "_driver_logged", False):
+            log.info("ODBC driver '%s' is not installed; using '%s'", self.s.get("driver") or "(automatic)", chosen)
+            self._driver_logged = True
+        return chosen
+
     def connection_string(self, include_secret: bool = True) -> str:
         s = self.s
         if not s.get("server") or not s.get("database"):
             raise ValidationError("SQL Server name and database are required.")
         parts = [
-            f"DRIVER={_odbc_value(s['driver'])}",
+            f"DRIVER={_odbc_value(self.driver)}",
             f"SERVER={_odbc_value(s['server'])}",
             f"DATABASE={_odbc_value(s['database'])}",
             "APP=NCR Print Label",
@@ -102,7 +153,7 @@ class SqlServerDataSource:
     def test_connection(self) -> str:
         with self._connect() as conn:
             row = conn.cursor().execute("SELECT @@SERVERNAME, DB_NAME(), SERVERPROPERTY('ProductVersion')").fetchone()
-        return f"Connected to {row[0]} / {row[1]} (SQL Server {row[2]})"
+        return f"Connected to {row[0]} / {row[1]} (SQL Server {row[2]}) using '{self.driver}'"
 
     def list_sources(self) -> list[tuple[str, str, str]]:
         """All tables and views the login can see: (schema, name, 'TABLE' | 'VIEW'). Metadata only."""

@@ -20,19 +20,35 @@ from PySide6.QtWidgets import (
 )
 
 from ...app.context import AppContext
-from ...infrastructure.ax.sql_server import SqlServerDataSource
+from ...infrastructure.ax.sql_server import AUTO_DRIVER, SqlServerDataSource, choose_driver, installed_sql_drivers
 from ...services.access import ALWAYS_VISIBLE, MENUS, Access
 from ..widgets import Banner, Card, page_header
 from ..workers import error_text, run_async
 
 
-def _installed_sql_drivers() -> list[str]:
-    try:
-        import pyodbc
+AUTO_LABEL = "Automatic (best driver on this PC)"
 
-        return [d for d in pyodbc.drivers() if "SQL Server" in d]
-    except Exception:
-        return []
+
+def fill_driver_combo(combo: QComboBox, configured: str) -> None:
+    """Automatic + the SQL Server drivers installed on this PC; a configured driver that this PC
+    does not have shows as Automatic (the program falls back to an installed one anyway)."""
+    installed = installed_sql_drivers()
+    combo.clear()
+    combo.addItem(AUTO_LABEL, AUTO_DRIVER)
+    for name in installed:
+        combo.addItem(name, name)
+    used = choose_driver(configured)
+    combo.setToolTip(f"This PC has: {', '.join(installed) or 'no SQL Server driver'}.\nIn use now: {used}")
+    index = combo.findData(configured) if configured in installed else 0
+    combo.setCurrentIndex(max(0, index))
+
+
+def driver_from_combo(combo: QComboBox) -> str:
+    data = combo.currentData()
+    if data is not None and combo.currentText() == combo.itemText(combo.currentIndex()):
+        return str(data)
+    text = combo.currentText().strip()  # typed by hand
+    return AUTO_DRIVER if text == AUTO_LABEL else text
 
 
 class SettingsPage(QWidget):
@@ -59,7 +75,6 @@ class SettingsPage(QWidget):
         self.database = QLineEdit()
         self.driver = QComboBox()
         self.driver.setEditable(True)
-        self.driver.addItems(_installed_sql_drivers())
         self.auth = QComboBox()
         self.auth.addItem("SQL Server Authentication", "sql")
         self.auth.addItem("Windows Integrated Authentication", "windows")
@@ -122,7 +137,7 @@ class SettingsPage(QWidget):
         self.mock.setChecked(d["use_mock"])
         self.server.setText(d["server"])
         self.database.setText(d["database"])
-        self.driver.setCurrentText(d["driver"])
+        fill_driver_combo(self.driver, d["driver"])
         self.auth.setCurrentIndex(max(0, self.auth.findData(d["auth"])))
         self.username.setText(d["username"])
         self.password.clear()
@@ -151,7 +166,7 @@ class SettingsPage(QWidget):
         d = copy.deepcopy(self.ctx.config["database"])
         d.update(
             use_mock=self.mock.isChecked(), server=self.server.text().strip(), database=self.database.text().strip(),
-            driver=self.driver.currentText().strip(), auth=self.auth.currentData(), username=self.username.text().strip(),
+            driver=driver_from_combo(self.driver), auth=self.auth.currentData(), username=self.username.text().strip(),
             encrypt=self.encrypt.isChecked(), trust_server_certificate=self.trust.isChecked(),
             connect_timeout=self.connect_timeout.value(), query_timeout=self.query_timeout.value(),
             company=self.company.text().strip(),

@@ -30,7 +30,7 @@ from ..infrastructure.printing.adapters import (
     WindowsSharedPrinterAdapter,
     WindowsSpoolerAdapter,
 )
-from .pages.settings_page import _installed_sql_drivers
+from .pages.settings_page import driver_from_combo, fill_driver_combo
 from .printer_picker import PrinterPicker
 from .widgets import Banner
 from .workers import error_text, run_async
@@ -102,8 +102,7 @@ class DatabasePage(QWizardPage):
         self.database = QLineEdit(d["database"])
         self.driver = QComboBox()
         self.driver.setEditable(True)
-        self.driver.addItems(_installed_sql_drivers())
-        self.driver.setCurrentText(d["driver"])
+        fill_driver_combo(self.driver, d["driver"])
         self.username = QLineEdit(d["username"])
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
@@ -138,7 +137,7 @@ class DatabasePage(QWizardPage):
         d = copy.deepcopy(self.ctx.config["database"])
         d.update(
             use_mock=self.sample.isChecked(), server=self.server.text().strip(), database=self.database.text().strip(),
-            driver=self.driver.currentText().strip(), auth="sql", username=self.username.text().strip(),
+            driver=driver_from_combo(self.driver), auth="sql", username=self.username.text().strip(),
             company=self.company.text().strip(),
         )
         return d

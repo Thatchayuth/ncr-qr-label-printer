@@ -40,3 +40,11 @@
 | "already open" ตอนเปิดโปรแกรม | มีโปรแกรมเปิดอยู่แล้ว ให้หาหน้าต่างเดิมใน taskbar |
 | ลืมรหัส Admin | ให้ IT ลบค่า `admin.password_hash` ใน `config.json` แล้วรหัสตั้งต้นจะกลับมาใช้ได้ จากนั้นเปลี่ยนรหัสทันที |
 | ค่าตั้งค่าหายหลังเปิดโปรแกรม | ไฟล์ config อ่านไม่ได้ ระบบเก็บไฟล์เดิมไว้เป็น `config.json.invalid-*` แล้วใช้ค่าตั้งต้นแทน |
+
+
+## ขึ้นว่าเครื่องไม่มี ODBC driver ของ SQL Server
+
+ตั้งแต่เวอร์ชัน 0.9.3 โปรแกรมเลือกไดรเวอร์ที่เครื่องมีให้เอง ถ้าไม่มี "ODBC Driver 17/18 for SQL Server" จะใช้ไดรเวอร์ "SQL Server" ที่ติดมากับ Windows ทุกเครื่อง
+- ดูได้ที่ Application Settings → **Test connection** จะแสดงว่าใช้ไดรเวอร์ตัวไหน
+- ช่อง **ODBC driver** ควรเป็น "Automatic"
+- ถ้าต้องเข้ารหัสการเชื่อมต่อ (Encrypt) กับ SQL Server รุ่นใหม่ ควรติดตั้ง "ODBC Driver 18 for SQL Server" จาก Microsoft (ต้องใช้สิทธิ์ admin)

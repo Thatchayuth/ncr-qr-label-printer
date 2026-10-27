@@ -2,6 +2,7 @@
 
 ## 0.9.3 (2026-10-27)
 
+- PCs without "ODBC Driver 17 for SQL Server" now connect. The program uses the configured driver when it is installed, otherwise the best one the PC has, down to Windows' built-in "SQL Server" driver (checked against AX: same results, including Thai text). New installs use "Automatic". "Test connection" shows which driver was used. The ODBC driver box lists Automatic plus the drivers on this PC.
 - Fix: Application Settings (and any long page) could be squeezed. Fields touched each other and row spacing disappeared, especially with Windows display scaling. Pages now keep their preferred height and scroll instead.
 - Updates work for both kinds of installation:
   - "Install for me only": as before, no administrator needed.
