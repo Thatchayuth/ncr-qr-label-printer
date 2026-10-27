@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The app always uses its light look, also when Windows is in dark mode. Dialogs, lists, tables and menus showed dark text on a dark background before.
+
 - Phase 6: labels bound to data profiles.
   - Data Profiles has a Labels card to tick the allowed labels and pick the default; it warns when a label prints fields the profile does not have.
   - Search & Print lists only the allowed labels and marks the default with ★.

@@ -61,6 +61,9 @@ def main() -> int:
     font.setFamilies(["Segoe UI", "Leelawadee UI", "Tahoma"])  # Leelawadee/Tahoma render Thai
     font.setPointSize(10)
     app.setFont(font)
+    from qrlabel.ui.theme import apply_light_theme
+
+    apply_light_theme(app)  # light look even when Windows uses dark mode
 
     splash = SplashScreen()
     splash.start()

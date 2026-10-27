@@ -2,8 +2,54 @@
 
 ACCENT = "#2563EB"
 
+
+def apply_light_theme(app) -> None:
+    """Always use the light look, also when Windows is in dark mode.
+
+    Without this, Qt follows the Windows dark mode for everything the style sheet does not
+    paint itself (dialogs, lists, tables), which gives dark text on a dark background.
+    """
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QPalette
+
+    hints = app.styleHints()
+    if hasattr(hints, "setColorScheme"):
+        hints.setColorScheme(Qt.ColorScheme.Light)
+    pal = QPalette()
+    colors = {
+        QPalette.ColorRole.Window: "#F1F5F9",
+        QPalette.ColorRole.WindowText: "#0F172A",
+        QPalette.ColorRole.Base: "#FFFFFF",
+        QPalette.ColorRole.AlternateBase: "#F8FAFC",
+        QPalette.ColorRole.Text: "#0F172A",
+        QPalette.ColorRole.PlaceholderText: "#94A3B8",
+        QPalette.ColorRole.Button: "#FFFFFF",
+        QPalette.ColorRole.ButtonText: "#1E293B",
+        QPalette.ColorRole.BrightText: "#FFFFFF",
+        QPalette.ColorRole.Highlight: "#2563EB",
+        QPalette.ColorRole.HighlightedText: "#FFFFFF",
+        QPalette.ColorRole.ToolTipBase: "#0F172A",
+        QPalette.ColorRole.ToolTipText: "#F8FAFC",
+        QPalette.ColorRole.Link: "#2563EB",
+        QPalette.ColorRole.Light: "#FFFFFF",
+        QPalette.ColorRole.Midlight: "#E2E8F0",
+        QPalette.ColorRole.Mid: "#CBD5E1",
+        QPalette.ColorRole.Dark: "#94A3B8",
+        QPalette.ColorRole.Shadow: "#64748B",
+    }
+    for role, color in colors.items():
+        pal.setColor(role, QColor(color))
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText):
+        pal.setColor(QPalette.ColorGroup.Disabled, role, QColor("#94A3B8"))
+    app.setPalette(pal)
+
 QSS = """
 QWidget { color: #0F172A; }
+QDialog, QMessageBox, QWizard, QWizardPage, QInputDialog { background: #FFFFFF; }
+QListWidget, QListView, QTreeView, QTableWidget { background: #FFFFFF; color: #0F172A;
+                                                  selection-background-color: #DBEAFE; selection-color: #0F172A; }
+QMenu { background: #FFFFFF; color: #0F172A; border: 1px solid #E2E8F0; }
+QMenu::item:selected { background: #EFF6FF; color: #0F172A; }
 QMainWindow, QWidget#Content, QStackedWidget#MainStack { background: #F1F5F9; }
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
