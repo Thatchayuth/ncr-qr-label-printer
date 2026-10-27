@@ -1,4 +1,4 @@
-# NCR QR Label Printer
+# NCR Print Label
 
 Windows desktop app that searches **Dynamics AX 4.0** (`AssetTable`, read-only) and prints **QR + AssetId** stickers on a **TSC TE200** (USB or Windows shared printer).
 
@@ -19,7 +19,7 @@ py -3.12 -m venv .venv
 
 The app starts in **SAMPLE DATA** mode with a **sample printer** that writes `.prn` files, so no database or printer is needed. Switch to AX in *Application Settings* and to the TE200 in *Printer Settings*.
 
-Build the installer (no Python needed on the target PC; needs Inno Setup 6 on the build PC). Output: `dist\installer\NCR-QR-Label-Printer-Setup-<version>.exe`
+Build the installer (no Python needed on the target PC; needs Inno Setup 6 on the build PC). Output: `dist\installer\NCR-Print-Label-Setup-<version>.exe`
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1

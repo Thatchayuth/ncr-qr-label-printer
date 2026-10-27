@@ -49,7 +49,7 @@ class WelcomePage(QWizardPage):
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
         self.ctx = ctx
-        self.setTitle("Welcome to NCR QR Label Printer")
+        self.setTitle("Welcome to NCR Print Label")
         self.setSubTitle("This short setup connects the program to Dynamics AX and to the label printer.")
         lay = QVBoxLayout(self)
         lay.addWidget(_muted(
@@ -324,7 +324,7 @@ class FirstRunWizard(QWizard):
         super().__init__(parent)
         self.ctx = ctx
         self._original = copy.deepcopy(ctx.config)
-        self.setWindowTitle("NCR QR Label Printer - Setup")
+        self.setWindowTitle("NCR Print Label - Setup")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage, True)
         self.setMinimumSize(640, 520)

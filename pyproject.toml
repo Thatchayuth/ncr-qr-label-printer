@@ -1,7 +1,7 @@
 [project]
 name = "ncr-qr-label-printer"
 version = "0.9.0"
-description = "NCR QR Label Printer - search Dynamics AX 4.0 data and print QR labels on TSC TE200"
+description = "NCR Print Label - search Dynamics AX 4.0 data and print QR labels on TSC TE200"
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 

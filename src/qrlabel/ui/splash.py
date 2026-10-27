@@ -134,7 +134,7 @@ class SplashScreen(QWidget):
         title.setBold(True)
         p.setFont(title)
         p.setPen(QColor("#F8FAFC"))
-        p.drawText(QRectF(card.left(), logo_rect.bottom() + 16, W, 30), Qt.AlignmentFlag.AlignHCenter, "NCR QR Label Printer")
+        p.drawText(QRectF(card.left(), logo_rect.bottom() + 16, W, 30), Qt.AlignmentFlag.AlignHCenter, "NCR Print Label")
         sub = QFont(self.font())
         sub.setPointSizeF(9.5)
         p.setFont(sub)

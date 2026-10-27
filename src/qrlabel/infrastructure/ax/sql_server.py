@@ -59,7 +59,7 @@ class SqlServerDataSource:
             f"DRIVER={_odbc_value(s['driver'])}",
             f"SERVER={_odbc_value(s['server'])}",
             f"DATABASE={_odbc_value(s['database'])}",
-            "APP=NCR QR Label Printer",
+            "APP=NCR Print Label",
             "ApplicationIntent=ReadOnly",
         ]
         if s.get("auth") == "windows":

@@ -1,4 +1,4 @@
-"""NCR QR Label Printer - entry point."""
+"""NCR Print Label - entry point."""
 from __future__ import annotations
 
 import logging
@@ -6,7 +6,7 @@ import sys
 import traceback
 
 
-MUTEX_NAME = "NCRQRLabelPrinter"  # also used by the installer (AppMutex) to detect a running copy
+MUTEX_NAME = "NCRQRLabelPrinter"  # kept from the old name: the installer (AppMutex) detects a running copy
 _mutex_handle = None
 
 
@@ -35,15 +35,15 @@ def main() -> int:
 
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
-    app.setApplicationName("NCR QR Label Printer")
+    app.setApplicationName("NCR Print Label")
     app.setOrganizationName("NCR")
     app.setApplicationVersion(__version__)
     app.setWindowIcon(QIcon(str(resource_path("app.ico"))))
 
     if _already_running():
         QMessageBox.information(
-            None, "NCR QR Label Printer",
-            "NCR QR Label Printer is already open.\nUse the window that is already running.",
+            None, "NCR Print Label",
+            "NCR Print Label is already open.\nUse the window that is already running.",
         )
         return 0
 

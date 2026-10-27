@@ -29,7 +29,7 @@ def import_profile(path: Path) -> DataProfile:
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         raise ValidationError(f"Not a valid profile file: {e}") from None
     if not isinstance(data, dict) or data.get("format") != FILE_FORMAT:
-        raise ValidationError("This file is not an NCR QR Label data profile.")
+        raise ValidationError("This file is not an NCR Print Label data profile.")
     if int(data.get("format_version", 0)) > FILE_FORMAT_VERSION:
         raise ValidationError("The profile file was made by a newer version of the application.")
     try:

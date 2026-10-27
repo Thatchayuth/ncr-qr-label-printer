@@ -1,4 +1,4 @@
-# NCR QR Label Printer — Phases
+# NCR Print Label — Phases
 
 Status legend: ✅ done · 🟡 in progress / partly done · ⬜ not started · ⛔ blocked on hardware or information
 
@@ -124,13 +124,13 @@ Note: jobs printed before this version have no data snapshot and cannot be repri
 
 | # | Task | Status |
 |---|---|---|
-| 5.1 | Inno Setup script ([installer/NCRQRLabelPrinter.iss](installer/NCRQRLabelPrinter.iss)): per-user by default, optional all-users, Start Menu + optional desktop shortcut, closes a running copy (AppMutex), removes the old `_internal` folder on upgrade, keeps user data, uninstall asks before deleting user data (default No) | ✅ |
+| 5.1 | Inno Setup script ([installer/NCRPrintLabel.iss](installer/NCRQRLabelPrinter.iss)): per-user by default, optional all-users, Start Menu + optional desktop shortcut, closes a running copy (AppMutex), removes the old `_internal` folder on upgrade, keeps user data, uninstall asks before deleting user data (default No) | ✅ |
 | 5.2 | First-run wizard: admin password → AX connection (Test connection must pass) or sample data → printer (USB / shared / none) + test label → summary | ✅ |
 | 5.3 | App icon, exe version resource, single-instance guard, version 0.9.0 | ✅ |
 | 5.4 | Guides: [INSTALL](docs/INSTALL.md), [USER_GUIDE](docs/USER_GUIDE.md), [TROUBLESHOOTING](docs/TROUBLESHOOTING.md) (Thai), [UAT checklist](docs/UAT.md) | ✅ |
 | 5.5 | UAT on clean Windows 10 / 11 PCs without Python, with the TE200 | ⛔ needs test PCs and the printer |
 
-**Build:** `scripts/build.ps1` runs tests → icon/version → PyInstaller onedir (131 MB) → `dist/installer/NCR-QR-Label-Printer-Setup-0.9.0.exe` (38 MB).
+**Build:** `scripts/build.ps1` runs tests → icon/version → PyInstaller onedir (131 MB) → `dist/installer/NCR-Print-Label-Setup-0.9.0.exe` (38 MB).
 
 **Executed on the dev PC (2026-10-26):**
 - Silent per-user install to a test folder created the exe, uninstaller, Start Menu shortcut and Apps entry.

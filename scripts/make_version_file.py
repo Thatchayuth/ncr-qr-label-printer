@@ -26,11 +26,11 @@ VSVersionInfo(
   kids=[
     StringFileInfo([StringTable('040904B0', [
       StringStruct('CompanyName', 'NCR'),
-      StringStruct('FileDescription', 'NCR QR Label Printer'),
+      StringStruct('FileDescription', 'NCR Print Label'),
       StringStruct('FileVersion', '{v}'),
-      StringStruct('InternalName', 'NCRQRLabelPrinter'),
-      StringStruct('OriginalFilename', 'NCRQRLabelPrinter.exe'),
-      StringStruct('ProductName', 'NCR QR Label Printer'),
+      StringStruct('InternalName', 'NCRPrintLabel'),
+      StringStruct('OriginalFilename', 'NCRPrintLabel.exe'),
+      StringStruct('ProductName', 'NCR Print Label'),
       StringStruct('ProductVersion', '{v}')])]),
     VarFileInfo([VarStruct('Translation', [1033, 1200])])
   ]

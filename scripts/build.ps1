@@ -1,9 +1,9 @@
-# Build NCR QR Label Printer: tests -> icon -> PyInstaller (onedir) -> Inno Setup installer.
+# Build NCR Print Label: tests -> icon -> PyInstaller (onedir) -> Inno Setup installer.
 #   powershell -ExecutionPolicy Bypass -File scripts\build.ps1            # full build
 #   powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -NoInstaller
 # Output:
-#   dist\NCRQRLabelPrinter\NCRQRLabelPrinter.exe
-#   dist\installer\NCR-QR-Label-Printer-Setup-<version>.exe
+#   dist\NCRPrintLabel\NCRPrintLabel.exe
+#   dist\installer\NCR-Print-Label-Setup-<version>.exe
 param([switch]$NoInstaller, [switch]$SkipTests)
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -29,7 +29,7 @@ Write-Host "Version $version"
 
 Step "PyInstaller"
 & $py -m PyInstaller --noconfirm --clean --onedir --windowed `
-    --name NCRQRLabelPrinter `
+    --name NCRPrintLabel `
     --icon src\qrlabel\resources\app.ico `
     --version-file build\version_info.txt `
     --add-data "src\qrlabel\resources;qrlabel\resources" `
@@ -39,7 +39,7 @@ Step "PyInstaller"
     --exclude-module PySide6.QtQuick --exclude-module PySide6.QtQml --exclude-module PySide6.QtPdf `
     src\main.py
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed." }
-Write-Host "Built: $root\dist\NCRQRLabelPrinter\NCRQRLabelPrinter.exe"
+Write-Host "Built: $root\dist\NCRPrintLabel\NCRPrintLabel.exe"
 
 if ($NoInstaller) { return }
 
@@ -50,6 +50,6 @@ $iscc = @(
     "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw "Inno Setup 6 not found. Install it: winget install JRSoftware.InnoSetup --scope user" }
-& $iscc "/DAppVersion=$version" installer\NCRQRLabelPrinter.iss
+& $iscc "/DAppVersion=$version" installer\NCRPrintLabel.iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed." }
-Write-Host "Installer: $root\dist\installer\NCR-QR-Label-Printer-Setup-$version.exe" -ForegroundColor Green
+Write-Host "Installer: $root\dist\installer\NCR-Print-Label-Setup-$version.exe" -ForegroundColor Green

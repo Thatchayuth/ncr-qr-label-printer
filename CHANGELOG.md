@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Renamed to **NCR Print Label**: installer, Start Menu / desktop shortcuts, Apps list, install folder, `NCRPrintLabel.exe`, window, splash and sidebar. AppId, the single-instance mutex and the user data folder are unchanged, so installing over the old "NCR QR Label Printer" upgrades it, keeps settings and removes the old exe and shortcuts.
+
 - Company (DATAAREAID) moved from the search form to the sidebar, under the AX LIVE badge. Click it to pick a company from AX: names come from DATAAREA, virtual companies are hidden, and each shows its number of assets. The choice is saved, and changing it clears the old results.
 
 - Redesigned date picker: all day numbers visible, weekday header, chevron navigation, rounded blue selected day, today in bold blue, weekends in red, other months greyed.

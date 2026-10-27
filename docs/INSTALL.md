@@ -1,4 +1,4 @@
-# คู่มือติดตั้ง NCR QR Label Printer
+# คู่มือติดตั้ง NCR Print Label
 
 สำหรับ: ผู้ดูแลระบบ / IT
 
@@ -17,7 +17,7 @@
 1. ต่อ TE200 ผ่าน USB แล้วติดตั้งไดรเวอร์ของ TSC
 2. ใส่ม้วนสติกเกอร์ แล้วทำ **Calibrate gap sensor** ด้วย TSC Diagnostic Tool หรือตามขั้นตอนในคู่มือ TE200
 3. แชร์เครื่องพิมพ์ให้เครื่องอื่นใช้: Settings → Printers → TE200 → Printer properties → Sharing → ตั้งชื่อแชร์ เช่น `TSC_TE200`
-4. รัน `NCR-QR-Label-Printer-Setup-<version>.exe`
+4. รัน `NCR-Print-Label-Setup-<version>.exe`
    - ค่าปกติคือ **ติดตั้งเฉพาะผู้ใช้นี้** ไม่ต้องใช้สิทธิ์ Admin
    - ถ้าต้องการติดตั้งให้ทุกคนในเครื่อง เลือก "Install for all users" (ต้องใช้สิทธิ์ Admin)
 5. เปิดโปรแกรมครั้งแรกจะเจอ **Setup wizard**:
@@ -45,6 +45,8 @@
 
 ## อัปเกรดเวอร์ชัน
 
+- โปรแกรมเปลี่ยนชื่อจาก "NCR QR Label Printer" เป็น **"NCR Print Label"** แล้ว ติดตั้งทับเวอร์ชันเก่าได้เลย ค่าตั้งค่าและประวัติยังอยู่ครบ ตัวติดตั้งจะลบไฟล์ .exe และ shortcut ที่ใช้ชื่อเก่าออกให้
+
 - รัน Setup.exe ของเวอร์ชันใหม่ทับได้เลย
 - ถ้าโปรแกรมเปิดอยู่ ตัวติดตั้งจะขอให้ปิดก่อน
 - ค่าตั้งค่า ประวัติการพิมพ์ และ template ยังอยู่ครบ เพราะเก็บแยกไว้ที่ `%LOCALAPPDATA%\NCR\QRLabelPrinter`
@@ -52,14 +54,14 @@
 
 ## ถอนการติดตั้ง
 
-ไปที่ Settings → Apps → **NCR QR Label Printer** → Uninstall ระบบจะถามว่าจะลบค่าตั้งค่าและประวัติด้วยหรือไม่ (ค่าตั้งต้นคือ **ไม่ลบ**)
+ไปที่ Settings → Apps → **NCR Print Label** → Uninstall ระบบจะถามว่าจะลบค่าตั้งค่าและประวัติด้วยหรือไม่ (ค่าตั้งต้นคือ **ไม่ลบ**)
 
 ## ตำแหน่งไฟล์
 
 | สิ่งที่เก็บ | ตำแหน่ง |
 |---|---|
-| โปรแกรม (ติดตั้งเฉพาะผู้ใช้) | `%LOCALAPPDATA%\Programs\NCR QR Label Printer` |
-| โปรแกรม (ติดตั้งให้ทุกคน) | `C:\Program Files\NCR QR Label Printer` |
+| โปรแกรม (ติดตั้งเฉพาะผู้ใช้) | `%LOCALAPPDATA%\Programs\NCR Print Label` |
+| โปรแกรม (ติดตั้งให้ทุกคน) | `C:\Program Files\NCR Print Label` |
 | ค่าตั้งค่า (รหัส SQL ถูกเข้ารหัสด้วย DPAPI) | `%LOCALAPPDATA%\NCR\QRLabelPrinter\config.json` |
 | ประวัติการพิมพ์, profile, template | `%LOCALAPPDATA%\NCR\QRLabelPrinter\qrlabel.sqlite3` |
 | Log | `%LOCALAPPDATA%\NCR\QRLabelPrinter\logs\` |

@@ -39,7 +39,7 @@ class MainWindow(QMainWindow):
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
         self.ctx = ctx
-        self.setWindowTitle(f"NCR QR Label Printer {ctx.version}")
+        self.setWindowTitle(f"NCR Print Label {ctx.version}")
         self.setWindowIcon(QIcon(str(resource_path("app.ico"))))
         self.resize(1440, 900)
         self.setMinimumSize(1180, 700)
@@ -127,7 +127,7 @@ class MainWindow(QMainWindow):
         ll.addWidget(logo_icon)
         titles = QVBoxLayout()
         titles.setSpacing(0)
-        title = QLabel("NCR QR Label")
+        title = QLabel("NCR Print Label")
         title.setObjectName("AppTitle")
         subtitle = QLabel("Asset label printer")
         subtitle.setObjectName("AppSubtitle")

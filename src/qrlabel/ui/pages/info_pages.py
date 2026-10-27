@@ -79,7 +79,7 @@ class DiagnosticsPage(QWidget):
 
     def reload(self) -> None:
         lines = [
-            f"Application      : NCR QR Label Printer {self.ctx.version}",
+            f"Application      : NCR Print Label {self.ctx.version}",
             f"Python           : {sys.version.split()[0]} ({platform.architecture()[0]})",
             f"Windows          : {platform.platform()}",
             f"Data folder      : {paths.app_data_dir()}",
