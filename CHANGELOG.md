@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Search results have a tick column. Clicking a row ticks or unticks it, so many labels can be picked without Ctrl, and the ✓ header ticks or unticks all. The preview shows the row clicked last.
+
 - Data Profiles editor (admin password required):
   - Create, duplicate, import, export and version data profiles.
   - Choose any AX table or DBA view (searchable list of tables and views; the choice is added to the approved sources).

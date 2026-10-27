@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QDate, QSize, Qt
-from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtCore import QDate, QModelIndex, QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QStackedWidget,
+    QStyledItemDelegate,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -36,6 +37,37 @@ from ..widgets import Banner, Card, chip, labeled, page_header, pil_to_pixmap, s
 from ..workers import error_text, run_async
 
 PREVIEW_W, PREVIEW_H = 360, 270
+
+
+class TickDelegate(QStyledItemDelegate):
+    """Draws a tick box that mirrors whether the row is selected (selection = labels to print)."""
+
+    def paint(self, painter: QPainter, option, index) -> None:
+        super().paint(painter, option, index)
+        view = self.parent()
+        ticked = view.selectionModel().isRowSelected(index.row(), QModelIndex())
+        r = option.rect
+        box = QRectF(r.center().x() - 8, r.center().y() - 8, 16, 16)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if ticked:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#2563EB"))
+            painter.drawRoundedRect(box, 4, 4)
+            pen = QPen(QColor("#FFFFFF"), 2)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            tick = QPainterPath(QPointF(box.left() + 4, box.center().y()))
+            tick.lineTo(box.left() + 7, box.bottom() - 4.5)
+            tick.lineTo(box.right() - 3.5, box.top() + 4.5)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(tick)
+        else:
+            painter.setPen(QPen(QColor("#94A3B8"), 1.4))
+            painter.setBrush(QColor("#FFFFFF"))
+            painter.drawRoundedRect(box.adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
+        painter.restore()
 
 
 class SearchPrintPage(QWidget):
@@ -144,7 +176,10 @@ class SearchPrintPage(QWidget):
         self.table = QTableView()
         self.table.setModel(self.model)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        # MultiSelection: a click ticks / unticks a row without Ctrl, so many labels can be picked
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
+        self.table.setItemDelegateForColumn(0, TickDelegate(self.table))
+        self.table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
@@ -329,6 +364,14 @@ class SearchPrintPage(QWidget):
         tid = self.template_combo.currentData()
         return next((t for t in self.templates if t.id == tid), None)
 
+    def _on_header_clicked(self, section: int) -> None:
+        if section != 0 or not self.records:
+            return
+        if len(self.selected_records()) == len(self.records):
+            self.table.clearSelection()
+        else:
+            self.table.selectAll()
+
     def selected_records(self) -> list[dict[str, Any]]:
         rows = sorted({i.row() for i in self.table.selectionModel().selectedRows()})
         return [self.records[r] for r in rows if r < len(self.records)]
@@ -451,9 +494,11 @@ class SearchPrintPage(QWidget):
         self.model.clear()
         if profile:
             fields = profile.display_fields
-            self.model.setHorizontalHeaderLabels([f.label for f in fields])
+            self.model.setHorizontalHeaderLabels(["✓"] + [f.label for f in fields])
+            self.model.setHeaderData(0, Qt.Orientation.Horizontal, "Tick all / untick all", Qt.ItemDataRole.ToolTipRole)
             for rec in rows:
-                items = []
+                tick = QStandardItem("")  # drawn by TickDelegate from the row's selection state
+                items = [tick]
                 for f in fields:
                     text = format_value(rec.get(f.column.upper()), f)
                     item = QStandardItem(" ".join(text.split()))  # multi-line AX text on one row
@@ -462,7 +507,9 @@ class SearchPrintPage(QWidget):
                 self.model.appendRow(items)
             header = self.table.horizontalHeader()
             header.setStretchLastSection(True)
-            for col, f in enumerate(fields):
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(0, 40)
+            for col, f in enumerate(fields, start=1):
                 if f.column.upper() == "NAME":  # long text: fixed width the user can drag; full text in tooltip
                     header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
                     self.table.setColumnWidth(col, 260)
@@ -487,7 +534,10 @@ class SearchPrintPage(QWidget):
 
     def _on_selection(self) -> None:
         n = len(self.selected_records())
-        self.selection_label.setText(f"{n} row(s) selected  ·  Ctrl/Shift + click to select several" if n else "Click a row to preview · Ctrl/Shift + click to select several")
+        self.selection_label.setText(
+            f"{n} of {len(self.records)} ticked for printing  ·  click a row to tick / untick" if n
+            else "Click rows to tick the labels to print · click the tick column header to tick all"
+        )
         self.print_btn.setEnabled(n > 0 and not self._printing)
         if not self._printing:
             self.print_btn.setText(f"  Print {n} label(s)" if n else "  Print selected")
@@ -503,7 +553,12 @@ class SearchPrintPage(QWidget):
         self.size_chip.setText(f"{template.width_mm:g} × {template.height_mm:g} mm")
         self.size_chip.setToolTip(f"Gap {template.gap_mm:g} mm, {template.dpi} dpi")
         selected = self.selected_records()
-        record = selected[0] if selected else None
+        current = self.table.currentIndex().row()
+        sel_model = self.table.selectionModel()
+        if 0 <= current < len(self.records) and sel_model.isRowSelected(current, QModelIndex()):
+            record = self.records[current]  # the row clicked last
+        else:
+            record = selected[0] if selected else None
         self.preview_banner.clear_message()
         values: dict[str, str] = {}
         qr_text = None
