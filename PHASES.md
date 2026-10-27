@@ -184,3 +184,11 @@ Label (like the "STOCK" sample): `STOCK เกรด [InventSizeId]` / `รห�
 - Labels rendered from real lines match the STOCK sample (grade, item, |qty| + unit, name, batch, note). Test print to file: 2 lines -> 2 jobs, TSPL complete.
 - Results sorted newest first (TransDate, Journal, Line), because Journal ids do not sort by time.
 - On the dev PC the template "InventJournal Label" v6 has its boxes bound to fields. The third box on the Batch row was bound to Note, which is a guess.
+
+## Menu access by AD group (2026-10-27, part of Phase 9)
+
+- Agreed: AD group **ICT-RY** sees every menu. Everyone else sees Search & Print, Print History and Printer Settings.
+- The admin password (sidebar **Admin** button) shows every menu for the session. This replaces the "admin icon unlocks hidden buttons" item.
+- Settings live in config `access` (admin_groups, user_menus) and can be edited in Application Settings.
+- Group changes in AD apply after the user signs in to Windows again. PCs with one shared Windows account give everyone that account's rights.
+- Still open for Phase 9: installer choices are probably no longer needed (one install for everyone; AD decides the menus). Per-profile access (Asset / Journal by group) only if asked.

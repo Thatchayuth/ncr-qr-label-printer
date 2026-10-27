@@ -133,6 +133,7 @@ class AdminGate(QWidget):
 
         self.unlock_btn.clicked.connect(self._unlock)
         self.password.returnPressed.connect(self._unlock)
+        self.lock_btn = lock_btn
         lock_btn.clicked.connect(self.lock)
         change.clicked.connect(self._change_password)
         self.lock()
@@ -144,7 +145,20 @@ class AdminGate(QWidget):
     def lock(self) -> None:
         self.password.clear()
         self.banner.clear_message()
+        if self.ctx.access.full_access:  # AD admin group or admin menus unlocked: no second password
+            self.sync_access()
+            return
         self.stack.setCurrentIndex(0)
+
+    def sync_access(self) -> None:
+        full = self.ctx.access.full_access
+        self.lock_btn.setVisible(not full)
+        if full and not self.unlocked:
+            if hasattr(self.content, "load"):
+                self.content.load()
+            self.stack.setCurrentIndex(1)
+        elif not full and self.unlocked:
+            self.stack.setCurrentIndex(0)
 
     def _unlock(self) -> None:
         try:

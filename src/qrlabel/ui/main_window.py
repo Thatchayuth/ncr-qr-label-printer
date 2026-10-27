@@ -1,17 +1,21 @@
 """Main window: dark sidebar navigation + stacked pages."""
 from __future__ import annotations
 
-import getpass
+import logging
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QFont, QIcon
 from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QScrollArea,
     QStackedWidget,
     QVBoxLayout,
@@ -21,6 +25,7 @@ from PySide6.QtWidgets import (
 from ..app.context import AppContext
 from ..app.paths import resource_path
 from .admin_gate import AdminGate
+from .workers import error_text
 from .company_switcher import CompanySwitcher
 from .icons import icon, pixmap
 from .pages.designer_page import DesignerPage
@@ -58,28 +63,30 @@ class MainWindow(QMainWindow):
         self.search_page = SearchPrintPage(ctx)
         sections = [
             ("OPERATIONS", [
-                ("Search & Print", "search", self.search_page),
-                ("Print History", "history", HistoryPage(ctx)),
+                ("search", "Search & Print", "search", self.search_page),
+                ("history", "Print History", "history", HistoryPage(ctx)),
             ]),
             ("LABEL SETUP", [
-                ("Data Profiles", "table", AdminGate(
+                ("profiles", "Data Profiles", "table", AdminGate(
                     ctx, ProfilesPage(ctx), "Data Profiles",
                     "Which AX table or view to read, which columns to show, search and print.",
                 )),
-                ("QR Configuration", "qr", QrConfigPage(ctx)),
-                ("Label Designer", "layout", DesignerPage(ctx)),
+                ("qr", "QR Configuration", "qr", QrConfigPage(ctx)),
+                ("designer", "Label Designer", "layout", DesignerPage(ctx)),
             ]),
             ("SYSTEM", [
-                ("Printer Settings", "printer", PrinterPage(ctx, on_saved=self._settings_changed)),
-                ("Application Settings", "sliders", AdminGate(
-                    ctx, SettingsPage(ctx, on_saved=self._settings_changed),
+                ("printer", "Printer Settings", "printer", PrinterPage(ctx, on_saved=self._settings_changed)),
+                ("settings", "Application Settings", "sliders", AdminGate(
+                    ctx, SettingsPage(ctx, on_saved=self._settings_changed, on_access_changed=self.access_settings_changed),
                     "Application Settings", "Connection to the Dynamics AX 4.0 SQL Server (read-only).",
                 )),
-                ("Diagnostics", "activity", DiagnosticsPage(ctx)),
+                ("diagnostics", "Diagnostics", "activity", DiagnosticsPage(ctx)),
             ]),
         ]
         self.pages: list[tuple[str, QWidget]] = []
         self._row_to_page: dict[int, int] = {}
+        self._menu_items: dict[str, QListWidgetItem] = {}
+        self._sections: list[tuple[QListWidgetItem, list[str]]] = []  # header, menu keys
         header_font = QFont()
         header_font.setPointSizeF(7.5)
         header_font.setBold(True)
@@ -89,9 +96,11 @@ class MainWindow(QMainWindow):
             head.setFont(header_font)
             head.setForeground(QColor("#64748B"))
             self.nav.addItem(head)
-            for name, icon_name, page in items:
+            self._sections.append((head, [key for key, *_ in items]))
+            for key, name, icon_name, page in items:
                 item = QListWidgetItem(icon(icon_name, NAV_COLOR, NAV_SELECTED), "  " + name)
                 self.nav.addItem(item)
+                self._menu_items[key] = item
                 self._row_to_page[self.nav.row(item)] = len(self.pages)
                 self.pages.append((name, page))
                 scroll = QScrollArea()
@@ -102,6 +111,7 @@ class MainWindow(QMainWindow):
                 self.stack.addWidget(scroll)
         self.nav.currentRowChanged.connect(self._show_row)
         self.nav.setCurrentRow(1)
+        self.apply_access()
         self._settings_changed()
 
     def _build_sidebar(self) -> QFrame:
@@ -160,13 +170,21 @@ class MainWindow(QMainWindow):
         )
         self.company.changed.connect(self._company_changed)
         foot.addWidget(self.company)
-        try:
-            user = getpass.getuser()
-        except Exception:
-            user = ""
-        info = QLabel(f"{user}  ·  v{self.ctx.version}")
-        info.setObjectName("SideFooter")
-        foot.addWidget(info)
+        self.admin_btn = QPushButton()
+        self.admin_btn.setObjectName("SideAdmin")
+        self.admin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.admin_btn.setStyleSheet(
+            "QPushButton#SideAdmin { background: transparent; color: #CBD5E1; border: 1px solid #334155;"
+            " border-radius: 8px; padding: 5px 10px; text-align: left; }"
+            "QPushButton#SideAdmin:hover { background: #1E293B; color: #FFFFFF; }"
+            "QPushButton#SideAdmin:disabled { color: #86EFAC; border-color: #1E3A2F; }"
+        )
+        self.admin_btn.clicked.connect(self._admin_clicked)
+        foot.addWidget(self.admin_btn)
+        self.user_info = QLabel()
+        self.user_info.setObjectName("SideFooter")
+        self.user_info.setWordWrap(True)
+        foot.addWidget(self.user_info)
         side.addLayout(foot)
         return sidebar
 
@@ -190,6 +208,56 @@ class MainWindow(QMainWindow):
             if self.pages[index][0] == name:
                 self.nav.setCurrentRow(row)
                 return
+
+    # ------------------------------------------------------------ access
+
+    def apply_access(self) -> None:
+        """Hide the menus this user may not see (AD group or admin password)."""
+        access = self.ctx.access
+        for key, item in self._menu_items.items():
+            item.setHidden(not access.can_see(key))
+        for head, keys in self._sections:
+            head.setHidden(all(self._menu_items[k].isHidden() for k in keys))
+        current = self.nav.currentItem()
+        if current is None or current.isHidden():
+            self.nav.setCurrentItem(self._menu_items["search"])
+        for _, page in self.pages:
+            if isinstance(page, AdminGate):
+                page.sync_access()
+        user = self.ctx.identity.user or "unknown user"
+        self.user_info.setText(f"{user}  ·  v{self.ctx.version}")
+        self.user_info.setToolTip(access.describe())
+        if access.is_ad_admin:
+            self.admin_btn.setText(f"  Admin · {access.matched_admin_group}")
+            self.admin_btn.setIcon(icon("check", "#86EFAC", size=14))
+            self.admin_btn.setToolTip("Your Windows account is in an admin group: every menu is shown.")
+            self.admin_btn.setEnabled(False)
+        elif access.unlocked:
+            self.admin_btn.setText("  Admin unlocked · Lock")
+            self.admin_btn.setIcon(icon("x", "#FCA5A5", size=14))
+            self.admin_btn.setToolTip("Hide the admin menus again")
+            self.admin_btn.setEnabled(True)
+        else:
+            self.admin_btn.setText("  Admin")
+            self.admin_btn.setIcon(icon("lock", "#CBD5E1", size=14))
+            self.admin_btn.setToolTip("Show every menu (admin password)")
+            self.admin_btn.setEnabled(True)
+
+    def _admin_clicked(self) -> None:
+        access = self.ctx.access
+        if access.is_ad_admin:
+            return
+        if access.unlocked:
+            access.unlocked = False
+            self.apply_access()
+            return
+        if AdminPasswordDialog(self, self.ctx).exec() == QDialog.DialogCode.Accepted:
+            access.unlocked = True
+            self.apply_access()
+
+    def access_settings_changed(self) -> None:
+        self.ctx.reload_access()
+        self.apply_access()
 
     def _company_changed(self, cid: str) -> None:
         self.search_page.on_company_changed(cid, self.company.name_of(cid))
@@ -216,3 +284,44 @@ class MainWindow(QMainWindow):
         self.company.companies = []  # database may have changed: read the list again
         self.company.refresh_text()
         self.company.load()
+
+
+class AdminPasswordDialog(QDialog):
+    """Admin password: shows every menu until locked again or the application closes."""
+
+    def __init__(self, parent: QWidget, ctx: AppContext) -> None:
+        super().__init__(parent)
+        self.ctx = ctx
+        self.setWindowTitle("Admin")
+        self.setMinimumWidth(380)
+        lay = QVBoxLayout(self)
+        head = QLabel("Enter the admin password to show every menu.")
+        head.setWordWrap(True)
+        lay.addWidget(head)
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.setPlaceholderText("Admin password")
+        lay.addWidget(self.password)
+        self.error = QLabel("")
+        self.error.setStyleSheet("color: #B91C1C;")
+        self.error.setWordWrap(True)
+        lay.addWidget(self.error)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Unlock")
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        lay.addWidget(buttons)
+
+    def _accept(self) -> None:
+        try:
+            ok = self.ctx.admin.verify(self.password.text())
+        except Exception as e:  # too many wrong attempts
+            self.error.setText(error_text(e))
+            self.password.clear()
+            return
+        self.password.clear()
+        if not ok:
+            self.error.setText("Wrong password.")
+            return
+        logging.getLogger(__name__).info("Admin menus unlocked with the password by %s", self.ctx.identity.user)
+        self.accept()

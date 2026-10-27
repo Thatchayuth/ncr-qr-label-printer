@@ -83,3 +83,13 @@
 - **Fixed filter**: เงื่อนไขที่ผู้ใช้เปลี่ยนไม่ได้ เช่น `JOURNALTYPE=2` (เฉพาะ Transfer)
 - **Fixed values** ของ Related table: เช่น `MODULETYPE=0, DATAAREAID=@VIRTUAL` โดย `@VIRTUAL` หมายถึงบริษัทเสมือนของบริษัทที่เลือก (DB1 → VIR) ซึ่งเป็นที่เก็บ InventDim และ InventTable
 - Format `abs` = แสดงตัวเลขโดยไม่มีเครื่องหมายลบ
+
+
+## สิทธิ์การเห็นเมนู (ตามกลุ่ม AD ของ Windows)
+
+- ระบบอ่านชื่อผู้ใช้และกลุ่ม Active Directory จากการ login Windows โดยไม่ต้อง login ในแอปซ้ำ
+- **กลุ่ม ICT-RY** เห็นทุกเมนู และเข้า Data Profiles / Application Settings ได้โดยไม่ต้องใส่รหัส admin
+- **ผู้ใช้อื่น** เห็นเฉพาะ **Search & Print, Print History, Printer Settings**
+- ถ้าต้องการเปิดเมนูอื่นชั่วคราว: กดปุ่ม **Admin** (รูปกุญแจ) ที่แถบซ้ายล่าง แล้วใส่รหัส admin จะเห็นทุกเมนูจนกว่าจะกด **Lock** หรือปิดแอป
+- ผู้ดูแลเปลี่ยนกลุ่ม admin และเมนูที่ผู้ใช้อื่นเห็นได้ที่ Application Settings → **Who sees which menus**
+- เปลี่ยนกลุ่มใน AD แล้ว ผู้ใช้ต้อง sign out แล้ว login Windows ใหม่ สิทธิ์ใหม่จึงมีผล

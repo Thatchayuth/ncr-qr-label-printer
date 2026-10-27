@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Menus by Windows / Active Directory group.
+  - The app reads the Windows user and their AD groups from the logon token. No extra login, no LDAP query; it also works offline with a cached domain logon.
+  - Members of **ICT-RY** see every menu and open Data Profiles / Application Settings without the admin password.
+  - Everyone else sees **Search & Print, Print History and Printer Settings**. Other menus and empty section headers are hidden.
+  - The **Admin** button in the sidebar shows every menu after the admin password, until "Lock" or the app closes.
+  - Application Settings → "Who sees which menus": change the admin groups and the menus other users see. It shows your account and AD groups, and warns before you remove your own admin rights.
+  - The sidebar shows DOMAIN\user.
+
 - Label Designer: the "Selected element" panel keeps the same height for every kind of element (and with nothing selected), so the panels below no longer move up and down when another element is clicked. Position and size boxes show the value without " mm" (the row says "(mm)"), so 2-decimal values are no longer cut off.
 - Label Designer: clicking an element no longer makes it jump. A click with a tiny mouse wobble used to start a move, which snapped the element to the grid or a centre guide (also on the resize handle). Elements now move only after a real drag. X / Y / W / H show 2 decimals and are written back only when changed, so leaving a property box no longer rounds the position or size.
 

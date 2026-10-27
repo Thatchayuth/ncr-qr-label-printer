@@ -1,14 +1,18 @@
-"""Application Settings: AX database connection."""
+"""Application Settings: AX database connection and who sees which menus."""
 from __future__ import annotations
 
 import copy
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -17,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from ...app.context import AppContext
 from ...infrastructure.ax.sql_server import SqlServerDataSource
+from ...services.access import ALWAYS_VISIBLE, MENUS, Access
 from ..widgets import Banner, Card, page_header
 from ..workers import error_text, run_async
 
@@ -31,10 +36,11 @@ def _installed_sql_drivers() -> list[str]:
 
 
 class SettingsPage(QWidget):
-    def __init__(self, ctx: AppContext, on_saved=None) -> None:
+    def __init__(self, ctx: AppContext, on_saved=None, on_access_changed=None) -> None:
         super().__init__()
         self.ctx = ctx
         self.on_saved = on_saved
+        self.on_access_changed = on_access_changed
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 28, 32, 28)
         root.setSpacing(16)
@@ -99,6 +105,7 @@ class SettingsPage(QWidget):
         card.body.addWidget(self.banner)
         card.setMaximumWidth(760)
         root.addWidget(card)
+        root.addWidget(self._build_access_card())
         root.addStretch(1)
 
         self.mock.toggled.connect(self._update_enabled)
@@ -124,6 +131,7 @@ class SettingsPage(QWidget):
         self.company.setText(d.get("company", ""))
         self.sources.setText(", ".join(self.ctx.config["approved_sources"]))
         self._update_enabled()
+        self._load_access()
 
     def _update_enabled(self) -> None:
         live = not self.mock.isChecked()
@@ -196,3 +204,92 @@ class SettingsPage(QWidget):
         self.banner.show_message("Settings saved.", "success")
         if self.on_saved:
             self.on_saved()
+
+    # ------------------------------------------------------------ access
+
+    def _build_access_card(self) -> Card:
+        card = Card("Who sees which menus",
+                    "Based on the Windows (Active Directory) account. Members of an admin group see every menu "
+                    "without the admin password. Everyone else sees the menus ticked below; the Admin button in "
+                    "the sidebar shows every menu after the admin password.")
+        form = QFormLayout()
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(10)
+        self.me = QLabel()
+        self.me.setWordWrap(True)
+        self.admin_groups = QLineEdit()
+        self.admin_groups.setPlaceholderText("e.g. ICT-RY  (several: comma-separated; DOMAIN\\group also works)")
+        menus = QWidget()
+        grid = QGridLayout(menus)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(18)
+        self.menu_checks: dict[str, QCheckBox] = {}
+        for i, (key, name) in enumerate(MENUS.items()):
+            box = QCheckBox(name.replace("&", "&&"))  # a single & would be a shortcut key
+            if key == ALWAYS_VISIBLE:
+                box.setChecked(True)
+                box.setEnabled(False)
+                box.setToolTip("Always shown")
+            self.menu_checks[key] = box
+            grid.addWidget(box, i // 2, i % 2)
+        self.my_groups = QLabel()
+        self.my_groups.setObjectName("Muted")
+        self.my_groups.setWordWrap(True)
+        self.my_groups.setTextInteractionFlags(self.my_groups.textInteractionFlags() | Qt.TextInteractionFlag.TextSelectableByMouse)
+        form.addRow("You", self.me)
+        form.addRow("Admin groups", self.admin_groups)
+        form.addRow("Other users see", menus)
+        form.addRow("Your groups", self.my_groups)
+        card.body.addLayout(form)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.access_save_btn = QPushButton("Save access")
+        self.access_save_btn.setObjectName("Primary")
+        row.addWidget(self.access_save_btn)
+        card.body.addLayout(row)
+        self.access_banner = Banner()
+        card.body.addWidget(self.access_banner)
+        card.setMaximumWidth(760)
+        self.access_save_btn.clicked.connect(self._save_access)
+        return card
+
+    def _load_access(self) -> None:
+        a = self.ctx.config.get("access", {})
+        self.admin_groups.setText(", ".join(a.get("admin_groups", [])))
+        menus = set(a.get("user_menus", [])) | {ALWAYS_VISIBLE}
+        for key, box in self.menu_checks.items():
+            box.setChecked(key in menus)
+        ident = self.ctx.identity
+        self.me.setText(f"<b>{ident.user or 'unknown'}</b> &nbsp;·&nbsp; {self.ctx.access.describe()}")
+        names = sorted({g.rsplit("\\", 1)[-1] for g in ident.groups if "\\" in g and not g.upper().startswith(("NT AUTHORITY", "BUILTIN", "MANDATORY LABEL"))})
+        self.my_groups.setText(", ".join(names) if names else "No Active Directory groups found (not a domain account?).")
+
+    def _access_form(self) -> dict:
+        groups = [g.strip() for g in self.admin_groups.text().split(",") if g.strip()]
+        menus = [k for k, box in self.menu_checks.items() if box.isChecked()]
+        return {"admin_groups": groups, "user_menus": menus}
+
+    def _save_access(self) -> None:
+        access = self._access_form()
+        after = Access(self.ctx.identity.user, self.ctx.identity.groups, access)
+        if self.ctx.access.is_ad_admin and not after.is_ad_admin:
+            answer = QMessageBox.question(
+                self, "Save access",
+                "Your own Windows account will no longer be in an admin group, so the admin menus will be hidden "
+                "(the admin password can still show them). Save anyway?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        new = copy.deepcopy(self.ctx.config)
+        new["access"] = access
+        try:
+            self.ctx.config_service.save(new)
+        except Exception as e:
+            self.access_banner.show_message(error_text(e), "error")
+            return
+        self.ctx.config = new
+        self.ctx.reload_access()
+        self._load_access()
+        self.access_banner.show_message("Access saved.", "success")
+        if self.on_access_changed:
+            self.on_access_changed()

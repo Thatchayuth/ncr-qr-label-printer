@@ -21,6 +21,8 @@ from ..infrastructure.storage.repositories import (
     SqliteProfileRepository,
     SqliteTemplateRepository,
 )
+from ..infrastructure.windows_identity import current_identity
+from ..services.access import Access
 from ..services.admin_auth import AdminAuth
 from ..services.print_service import PrintService
 from ..services.qr_payload import QrPayloadBuilder
@@ -45,7 +47,16 @@ class AppContext:
             self.jobs, __version__, payload_builder=self.payloads, profiles=self.profiles, templates=self.templates
         )
         self.admin = AdminAuth(lambda: self.config, self.save_config)
+        self.identity = current_identity()
+        self.access = Access(self.identity.user, self.identity.groups, self.config.get("access"))
+        log.info("User %s: %s", self.identity.user, self.access.describe())
         self._seed()
+
+    def reload_access(self) -> None:
+        """After the access settings changed: keep a password unlock of this session."""
+        unlocked = self.access.unlocked
+        self.access = Access(self.identity.user, self.identity.groups, self.config.get("access"))
+        self.access.unlocked = unlocked
 
     def _seed(self) -> None:
         """First run: install the label templates shipped with the app and the Asset data profile."""

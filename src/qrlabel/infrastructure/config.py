@@ -56,6 +56,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "admin": {
         "password_hash": "",  # empty = built-in initial password (see services.admin_auth)
     },
+    # Menus by Active Directory group of the Windows user (see services.access)
+    "access": {
+        "admin_groups": ["ICT-RY"],  # see every menu, no admin password needed
+        "user_menus": ["search", "history", "printer"],  # everyone else
+    },
 }
 
 SCHEMA: dict[str, Any] = {
@@ -100,6 +105,13 @@ SCHEMA: dict[str, Any] = {
         "admin": {
             "type": "object",
             "properties": {"password_hash": {"type": "string", "maxLength": 300}},
+        },
+        "access": {
+            "type": "object",
+            "properties": {
+                "admin_groups": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+                "user_menus": {"type": "array", "items": {"type": "string", "maxLength": 40}},
+            },
         },
     },
 }
