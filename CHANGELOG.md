@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Label Designer: the "Selected element" panel keeps the same height for every kind of element (and with nothing selected), so the panels below no longer move up and down when another element is clicked. Position and size boxes show the value without " mm" (the row says "(mm)"), so 2-decimal values are no longer cut off.
 - Label Designer: clicking an element no longer makes it jump. A click with a tiny mouse wobble used to start a move, which snapped the element to the grid or a centre guide (also on the resize handle). Elements now move only after a real drag. X / Y / W / H show 2 decimals and are written back only when changed, so leaving a property box no longer rounds the position or size.
 
 - Barcode scanning of the journal number.

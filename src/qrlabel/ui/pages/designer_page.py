@@ -47,12 +47,12 @@ from ..workers import error_text
 STATIC_TEXT = "__static__"
 
 
-def _mm_spin(lo: float = 0.0, hi: float = 300.0, step: float = 0.5, decimals: int = 1) -> QDoubleSpinBox:
+def _mm_spin(lo: float = 0.0, hi: float = 300.0, step: float = 0.5, decimals: int = 1, suffix: str = " mm") -> QDoubleSpinBox:
     s = QDoubleSpinBox()
     s.setRange(lo, hi)
     s.setSingleStep(step)
     s.setDecimals(decimals)
-    s.setSuffix(" mm")
+    s.setSuffix(suffix)
     s.setKeyboardTracking(False)
     return s
 
@@ -304,10 +304,21 @@ class DesignerPage(QWidget):
         card = Card("Selected element")
         self.el_kind_chip = chip("", gray=True)
         card.header.addWidget(self.el_kind_chip)
+        keep = self.el_kind_chip.sizePolicy()
+        keep.setRetainSizeWhenHidden(True)  # the header keeps its height when the chip hides
+        self.el_kind_chip.setSizePolicy(keep)
+        # One area for the empty message and the form, as tall as the tallest form (text element), so
+        # the panels below do not jump up and down when another kind of element is clicked.
+        self.el_area = QWidget()
+        area = QVBoxLayout(self.el_area)
+        area.setContentsMargins(0, 0, 0, 0)
+        area.setSpacing(0)
+        card.body.addWidget(self.el_area)
+        self._el_height_reserved = False
         self.el_empty = QLabel("Click an element on the canvas to edit it.")
         self.el_empty.setObjectName("Muted")
         self.el_empty.setWordWrap(True)
-        card.body.addWidget(self.el_empty)
+        area.addWidget(self.el_empty)
 
         self.el_form_w = QWidget()
         f = QFormLayout(self.el_form_w)
@@ -315,8 +326,9 @@ class DesignerPage(QWidget):
         f.setHorizontalSpacing(12)
         f.setVerticalSpacing(8)
         # 2 decimals like the stored positions: 1 decimal rounded 37.15 to 37.2 and made items jump
-        self.e_x, self.e_y = _mm_spin(decimals=2), _mm_spin(decimals=2)
-        self.e_w, self.e_h = _mm_spin(0, 300, decimals=2), _mm_spin(0, 300, decimals=2)
+        # no " mm" in pairs of boxes: the label says (mm), so "16.50" is not cut off in the narrow panel
+        self.e_x, self.e_y = _mm_spin(decimals=2, suffix=""), _mm_spin(decimals=2, suffix="")
+        self.e_w, self.e_h = _mm_spin(0, 300, decimals=2, suffix=""), _mm_spin(0, 300, decimals=2, suffix="")
         pos = QHBoxLayout()
         pos.addWidget(self.e_x)
         pos.addWidget(self.e_y)
@@ -341,8 +353,8 @@ class DesignerPage(QWidget):
         self.e_thick = _mm_spin(0.1, 5, 0.1, 2)
         self.e_name = QLineEdit()
 
-        f.addRow("Position X / Y", pos)
-        f.addRow("Size W / H", size)
+        f.addRow("X / Y (mm)", pos)
+        f.addRow("W / H (mm)", size)
         f.addRow("Rotation", self.e_rot)
         f.addRow("Content", self.e_source)
         f.addRow("Text", self.e_text)
@@ -374,7 +386,8 @@ class DesignerPage(QWidget):
         f.addRow("", self.e_lock)
         self.e_lock.toggled.connect(self._on_element_edit)
         self.el_form = f
-        card.body.addWidget(self.el_form_w)
+        area.addWidget(self.el_form_w)
+        area.addStretch(1)
         self.el_form_w.hide()
 
         for s in (self.e_x, self.e_y, self.e_w, self.e_h, self.e_font, self.e_thick):
@@ -393,8 +406,8 @@ class DesignerPage(QWidget):
         f.setHorizontalSpacing(12)
         f.setVerticalSpacing(8)
         self.l_name = QLineEdit()
-        self.l_w = _mm_spin(5, TE200_MAX_PRINT_WIDTH_MM)
-        self.l_h = _mm_spin(5, 300)
+        self.l_w = _mm_spin(5, TE200_MAX_PRINT_WIDTH_MM, suffix="")
+        self.l_h = _mm_spin(5, 300, suffix="")
         size = QHBoxLayout()
         size.addWidget(self.l_w)
         size.addWidget(self.l_h)
@@ -422,7 +435,7 @@ class DesignerPage(QWidget):
         self.l_text_mode.addItem("Auto", "auto")
         self.l_text_mode.addItem("Printer fonts (ASCII)", "native")
         f.addRow("Name", self.l_name)
-        f.addRow("Width / Height", size)
+        f.addRow("W / H (mm)", size)
         f.addRow("Gap", self.l_gap)
         f.addRow("Media", self.l_media)
         f.addRow("Safe margin", self.l_margin)
@@ -1176,9 +1189,13 @@ class DesignerPage(QWidget):
         self.e_name.setText(el.name)
         self.e_lock.setChecked(el.locked)
         self.e_dither.setChecked(el.dither)
-        self.el_form.setRowVisible(self.QR_SIZE_ROW, el.kind == "qr")
         if el.kind == "qr":
             self._fill_qr_sizes(el)
+        self._show_rows_for(el)
+        self._loading = False
+
+    def _show_rows_for(self, el: LabelElement) -> None:
+        self.el_form.setRowVisible(self.QR_SIZE_ROW, el.kind == "qr")
         is_text, is_shape = el.kind == "text", el.kind in ("rect", "line")
         self.el_form.setRowVisible(self.IMAGE_ROW, el.kind == "image")
         self.el_form.setRowVisible(self.DITHER_ROW, el.kind == "image")
@@ -1188,7 +1205,22 @@ class DesignerPage(QWidget):
         self.el_form.setRowVisible(self.e_fit, is_text)
         self.el_form.setRowVisible(self.e_align, is_text)
         self.el_form.setRowVisible(self.e_thick, is_shape)
-        self._loading = False
+
+    def _reserve_element_height(self) -> None:
+        """Measure the form for every kind of element once and keep the tallest height."""
+        if self._el_height_reserved:
+            return
+        tallest = 0
+        for kind in ("text", "qr", "image", "rect", "line"):
+            self._show_rows_for(LabelElement(kind=kind, x_mm=0, y_mm=0, w_mm=1, h_mm=1))
+            self.el_form.activate()
+            tallest = max(tallest, self.el_form.sizeHint().height())
+        item = self.selected_item()
+        if item is not None:
+            self._show_rows_for(item.el)
+        if tallest > 0:
+            self.el_area.setMinimumHeight(tallest)
+            self._el_height_reserved = True
 
     def _on_element_edit(self, *_):
         if self._loading or not self.isVisible():
@@ -1289,3 +1321,4 @@ class DesignerPage(QWidget):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         QTimer.singleShot(0, self.view.fit)
+        QTimer.singleShot(0, self._reserve_element_height)
