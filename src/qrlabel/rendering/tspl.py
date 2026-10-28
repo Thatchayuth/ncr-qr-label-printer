@@ -118,7 +118,7 @@ class TsplRenderer:
         if el.kind == "text" and el.rotation == 0:
             text = resolve_text(el, values)
             use_native = t.text_mode == "native" or (t.text_mode == "auto" and not el.bold)
-            if use_native and is_native_safe(text):
+            if use_native and is_native_safe(text) and not el.wrap:  # printer fonts draw one line only
                 cmd, overflow = self._native_text(el, t, text)
                 return cmd, ([f"{name}: text '{text}' does not fit its box"] if overflow else [])
 

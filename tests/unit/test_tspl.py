@@ -150,3 +150,26 @@ def test_small_qr_modules_warn(template):
     assert any("hard to scan" in w for w in warnings)
     _, warnings = R.render_job(template, [({"ASSETID": "A"}, "FA-IT-5-14-0020")], copies=1)
     assert not any("hard to scan" in w for w in warnings)
+
+
+def test_wrap_breaks_long_text_into_lines():
+    from qrlabel.rendering.raster import get_font, rasterize_text, wrap_lines
+
+    text = 'Oil Suction & Discharge hose (3") 76.2mmx2Bx5.8m'
+    font = get_font(21, True)
+    lines = wrap_lines(text, font, 300)
+    assert len(lines) > 1 and " ".join(lines) == text
+    thai = wrap_lines("ทดสอบภาษาไทยไม่มีช่องว่างเลยนะครับ", font, 150)
+    assert len(thai) > 1 and "".join(thai) == "ทดสอบภาษาไทยไม่มีช่องว่างเลยนะครับ"
+
+    el = LabelElement(kind="text", x_mm=0, y_mm=0, w_mm=40, h_mm=12, font_mm=2.6, auto_fit=False, wrap=True)
+    assert rasterize_text(text, el, 203)[1] is False  # fits on several lines
+    el.wrap = False
+    assert rasterize_text(text, el, 203)[1] is True  # one line is too long
+
+
+def test_wrapped_text_never_uses_printer_fonts(template):
+    template.text_mode = "native"
+    el = LabelElement(kind="text", x_mm=1, y_mm=1, w_mm=20, h_mm=10, text="ABC DEF GHI", wrap=True)
+    cmd, _ = R.element_commands(el, template, {}, None, "M")
+    assert cmd.startswith(b"BITMAP")

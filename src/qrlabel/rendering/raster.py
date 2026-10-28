@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -109,10 +110,57 @@ def _to_1bit(gray: Image.Image) -> Image.Image:
     return gray.point(lambda p: 255 if p >= 128 else 0).convert("1", dither=Image.Dither.NONE)
 
 
+_THAI_LEADING_VOWELS = "เแโใไ"  # written before their consonant, so never leave one at a line end
+
+
+def _text_width(font, s: str) -> int:
+    left, _, right, _ = font.getbbox(s or " ", anchor="la")
+    return right - left
+
+
+def wrap_lines(text: str, font, width: int) -> list[str]:
+    """Break text into lines no wider than `width`: at spaces when possible, otherwise between characters."""
+    out: list[str] = []
+    for para in text.split("\n"):
+        rest = para
+        while _text_width(font, rest) > width and len(rest) > 1:
+            lo, hi = 1, len(rest) - 1  # longest prefix that fits (at least one character)
+            while lo < hi:
+                mid = (lo + hi + 1) // 2
+                if _text_width(font, rest[:mid]) <= width:
+                    lo = mid
+                else:
+                    hi = mid - 1
+            n = lo
+            while n > 1 and unicodedata.category(rest[n]) in ("Mn", "Mc"):  # keep Thai marks with their letter
+                n -= 1
+            if n > 1 and rest[n - 1] in _THAI_LEADING_VOWELS:
+                n -= 1
+            cut = rest.rfind(" ", 0, n + 1)
+            if cut > 0:
+                out.append(rest[:cut].rstrip())
+                rest = rest[cut + 1 :].lstrip(" ")
+            else:
+                out.append(rest[:n])
+                rest = rest[n:]
+        out.append(rest)
+    return out
+
+
+def _measure(text: str, el: LabelElement, size_px: int, w: int, h: int):
+    """Font, lines, line height and whether the text fits the box at this font size."""
+    font = get_font(size_px, el.bold)
+    lines = wrap_lines(text, font, w) if el.wrap else [text]
+    ascent, descent = font.getmetrics()
+    line_h = ascent + descent
+    widest = max(_text_width(font, s) for s in lines) if text else 0
+    bottom = (len(lines) - 1) * line_h + font.getbbox(lines[-1] or " ", anchor="la")[3]
+    return font, lines, line_h, widest <= w and bottom <= h
+
+
 def text_overflows(text: str, el: LabelElement, dpi: int) -> bool:
-    font = get_font(fit_font_px(text, el, dpi), el.bold)
-    left, top, right, bottom = font.getbbox(text or " ", anchor="la")
-    return (right - left) > mm_to_dots(el.w_mm, dpi) or bottom > mm_to_dots(el.h_mm, dpi)
+    w, h = mm_to_dots(el.w_mm, dpi), mm_to_dots(el.h_mm, dpi)
+    return not _measure(text, el, fit_font_px(text, el, dpi), w, h)[3]
 
 
 def rasterize_qr(qr_text: str, ecc: str, el: LabelElement, dpi: int) -> tuple[Placed, QrGeometry]:
@@ -138,8 +186,7 @@ def fit_font_px(text: str, el: LabelElement, dpi: int) -> int:
     w, h = mm_to_dots(el.w_mm, dpi), mm_to_dots(el.h_mm, dpi)
     smallest = max(1, mm_to_dots(min(el.min_font_mm, el.font_mm), dpi))
     while size > smallest:
-        left, _, right, bottom = get_font(size, el.bold).getbbox(text, anchor="la")
-        if right - left <= w and bottom <= h:
+        if _measure(text, el, size, w, h)[3]:
             break
         size -= 1
     return size
@@ -147,19 +194,22 @@ def fit_font_px(text: str, el: LabelElement, dpi: int) -> int:
 
 def rasterize_text(text: str, el: LabelElement, dpi: int) -> tuple[Placed, bool]:
     w, h = max(1, mm_to_dots(el.w_mm, dpi)), max(1, mm_to_dots(el.h_mm, dpi))
-    font = get_font(fit_font_px(text, el, dpi), el.bold)
+    font, lines, line_h, fits = _measure(text, el, fit_font_px(text, el, dpi), w, h)
     gray = Image.new("L", (w, h), 255)
     draw = ImageDraw.Draw(gray)
-    left, _, right, bottom = draw.textbbox((0, 0), text or "", font=font, anchor="la")
-    tw = right - left
-    if el.align == "center":
-        x = (w - tw) // 2 - left
-    elif el.align == "right":
-        x = w - tw - left
-    else:
-        x = -left
-    draw.text((x, 0), text, font=font, fill=0, anchor="la")
-    overflow = tw > w or bottom > h
+    for i, line in enumerate(lines):
+        if not line:
+            continue
+        left, _, right, _ = draw.textbbox((0, 0), line, font=font, anchor="la")
+        tw = right - left
+        if el.align == "center":
+            x = (w - tw) // 2 - left
+        elif el.align == "right":
+            x = w - tw - left
+        else:
+            x = -left
+        draw.text((x, i * line_h), line, font=font, fill=0, anchor="la")
+    overflow = bool(text) and not fits
     x0, y0 = mm_to_dots(el.x_mm, dpi), mm_to_dots(el.y_mm, dpi)
     return Placed(_rotate(_to_1bit(gray), el.rotation), x0, y0), overflow
 

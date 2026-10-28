@@ -344,6 +344,8 @@ class DesignerPage(QWidget):
         self.e_font = _mm_spin(0.8, 30, 0.1, 1)
         self.e_bold = QCheckBox("Bold")
         self.e_fit = QCheckBox("Shrink to fit")
+        self.e_wrap = QCheckBox("Wrap to next line")
+        self.e_wrap.setToolTip("Long text continues on the next line inside the box.\nMake the box tall enough for the lines you need.")
         font_row = QHBoxLayout()
         font_row.addWidget(self.e_font)
         font_row.addWidget(self.e_bold)
@@ -361,6 +363,7 @@ class DesignerPage(QWidget):
         self.FONT_ROW = f.rowCount()
         f.addRow("Font size", font_row)
         f.addRow("", self.e_fit)
+        f.addRow("", self.e_wrap)
         f.addRow("Align", self.e_align)
         f.addRow("Line thickness", self.e_thick)
         self.e_image_btn = QPushButton("Replace image...")
@@ -394,7 +397,7 @@ class DesignerPage(QWidget):
             s.valueChanged.connect(self._on_element_edit)
         for c in (self.e_rot, self.e_source, self.e_align):
             c.currentIndexChanged.connect(self._on_element_edit)
-        for c in (self.e_bold, self.e_fit):
+        for c in (self.e_bold, self.e_fit, self.e_wrap):
             c.toggled.connect(self._on_element_edit)
         self.e_text.editingFinished.connect(self._on_element_edit)
         self.e_name.editingFinished.connect(self._on_element_edit)
@@ -1184,6 +1187,7 @@ class DesignerPage(QWidget):
         self.e_font.setValue(el.font_mm)
         self.e_bold.setChecked(el.bold)
         self.e_fit.setChecked(el.auto_fit)
+        self.e_wrap.setChecked(el.wrap)
         self.e_align.setCurrentIndex(max(0, self.e_align.findData(el.align)))
         self.e_thick.setValue(el.thickness_mm)
         self.e_name.setText(el.name)
@@ -1203,6 +1207,7 @@ class DesignerPage(QWidget):
         self.el_form.setRowVisible(self.e_text, is_text and not el.field)
         self.el_form.setRowVisible(self.FONT_ROW, is_text)
         self.el_form.setRowVisible(self.e_fit, is_text)
+        self.el_form.setRowVisible(self.e_wrap, is_text)
         self.el_form.setRowVisible(self.e_align, is_text)
         self.el_form.setRowVisible(self.e_thick, is_shape)
 
@@ -1244,6 +1249,7 @@ class DesignerPage(QWidget):
         el.font_mm = self.e_font.value()
         el.bold = self.e_bold.isChecked()
         el.auto_fit = self.e_fit.isChecked()
+        el.wrap = self.e_wrap.isChecked()
         el.align = self.e_align.currentData()
         el.thickness_mm = self.e_thick.value()
         el.dither = self.e_dither.isChecked()

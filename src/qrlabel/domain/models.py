@@ -164,6 +164,7 @@ class LabelElement:
     rotation: int = 0  # 0 | 90 | 180 | 270 (clockwise)
     auto_fit: bool = True  # text: shrink font (down to min_font_mm) when it would overflow
     min_font_mm: float = 1.8
+    wrap: bool = False  # text: break long text onto more lines inside the box
     thickness_mm: float = 0.3
     name: str = ""
     locked: bool = False  # designer only: cannot be moved / resized on the canvas
